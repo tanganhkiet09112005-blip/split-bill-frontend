@@ -2,16 +2,19 @@
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import toast, { Toaster } from "react-hot-toast";
 import {
   Users, Plus, Trash2, Pencil, Check, X, ReceiptText,
-  ArrowRight, RotateCcw, TrendingUp, Wallet, Moon, Sun,
-  AlertTriangle, CircleDollarSign, UserRound, Banknote, Sparkles
+  ArrowRight, RotateCcw, Wallet, Moon, Sun,
+  AlertTriangle, CircleDollarSign, UserRound, Banknote, Sparkles,
+  TrendingUp, Loader2, Coffee
 } from "lucide-react";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Playfair_Display, DM_Sans } from "next/font/google";
 
-const font = Plus_Jakarta_Sans({ subsets: ["latin", "vietnamese"], weight: ["400", "500", "600", "700", "800"] });
+const display = Playfair_Display({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800", "900"] });
+const body = DM_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] });
 
-// ─── Business Logic ───────────────────────────────────────────────
+// ─── Business Logic (KHÔNG THAY ĐỔI) ────────────────────────────────────────
 function calculateOptimizedDebts(members: any[], expenses: any[]) {
   const balance: Record<string, number> = {};
   members.forEach((m) => (balance[m.id] = 0));
@@ -40,12 +43,11 @@ function calculateOptimizedDebts(members: any[], expenses: any[]) {
   return debts;
 }
 
-// ─── Utils ────────────────────────────────────────────────────────────────────
+// ─── Utils ───────────────────────────────────────────────────────────────────
 const AVATAR_PALETTE = [
-  ["#4F46E5", "#EEF2FF"], ["#7C3AED", "#F5F3FF"], ["#DB2777", "#FDF2F8"],
-  ["#D97706", "#FFFBEB"], ["#059669", "#ECFDF5"], ["#2563EB", "#EFF6FF"],
-  ["#DC2626", "#FEF2F2"], ["#0D9488", "#F0FDFA"], ["#9333EA", "#FAF5FF"],
-  ["#0891B2", "#ECFEFF"], ["#65A30D", "#F7FEE7"], ["#C2410C", "#FFF7ED"],
+  ["#c2410c", "#fff7ed"], ["#b45309", "#fffbeb"], ["#a16207", "#fefce8"],
+  ["#15803d", "#f0fdf4"], ["#0369a1", "#f0f9ff"], ["#7c3aed", "#faf5ff"],
+  ["#be185d", "#fdf2f8"], ["#0f766e", "#f0fdfa"], ["#c2410c", "#fff7ed"],
 ];
 
 function hashColor(str: string) {
@@ -72,7 +74,6 @@ const timeAgo = (ts: number) => {
   return new Date(ts).toLocaleDateString("vi-VN");
 };
 
-// ─── useLocalStorage (Chỉ còn dùng cho Dark Mode) ─────────────────────────────
 function useLS<T>(key: string, init: T): [T, (val: T | ((prev: T) => T)) => void] {
   const [v, set] = useState<T>(() => {
     if (typeof window === "undefined") return init;
@@ -83,65 +84,97 @@ function useLS<T>(key: string, init: T): [T, (val: T | ((prev: T) => T)) => void
   return [v, set];
 }
 
-// ─── Toast System ─────────────────────────────────────────────────────────────
-let _sid = 0, _setT: any = null;
-function useToasts() { const [t, s] = useState<any[]>([]); _setT = s; return t; }
-function toast(msg: string, type = "info", ms = 3800) {
-  if (!_setT) return;
-  const id = ++_sid;
-  _setT((p: any) => [...p, { id, msg, type }]);
-  setTimeout(() => _setT((p: any) => p.filter((x: any) => x.id !== id)), ms);
-}
+// ─── Design Tokens ───────────────────────────────────────────────────────────
+const tokens = {
+  light: {
+    bg: "bg-[#faf7f2]",
+    card: "bg-[#fffdf9] border-[#e8dfd0]",
+    cardHover: "hover:border-[#d4c4a8]",
+    text: "text-[#3d2b1a]",
+    textMuted: "text-[#9c7d5e]",
+    textFaint: "text-[#c4a882]",
+    input: "bg-[#faf7f2] border-[#ddd0bc] text-[#3d2b1a] placeholder-[#c4a882] focus:border-[#f97316] focus:bg-white",
+    pill: "bg-[#faf7f2] border-[#e0d0bc] text-[#9c7d5e] hover:border-[#f97316] hover:text-[#f97316]",
+    pillActive: "bg-[#f97316] border-[#f97316] text-white",
+    tab: "bg-[#ede8e0] border-[#ddd0bc]",
+    tabActive: "bg-[#fffdf9] text-[#f97316] shadow-sm border border-[#e8dfd0]",
+    tabInactive: "text-[#9c7d5e] hover:text-[#3d2b1a]",
+    divider: "border-[#e8dfd0]",
+    badge: "bg-[#fff3e0] text-[#c05a00]",
+    headerBg: "bg-[#3d2b1a]",
+    emptyBorder: "border-[#e8dfd0] bg-[#faf7f2]",
+    confirmBtn: "border-[#e8dfd0] text-[#9c7d5e] hover:bg-[#faf7f2]",
+    btnGhost: "bg-white/10 border-white/20 text-white hover:bg-white/20",
+  },
+  dark: {
+    bg: "bg-[#1a1208]",
+    card: "bg-[#221a0e] border-[#3d2b1a]",
+    cardHover: "hover:border-[#5c3d1e]",
+    text: "text-[#f0e6d3]",
+    textMuted: "text-[#a8865a]",
+    textFaint: "text-[#6b4e2a]",
+    input: "bg-[#1a1208] border-[#3d2b1a] text-[#f0e6d3] placeholder-[#6b4e2a] focus:border-[#f97316] focus:bg-[#221a0e]",
+    pill: "bg-[#221a0e] border-[#3d2b1a] text-[#a8865a] hover:border-[#f97316] hover:text-[#f97316]",
+    pillActive: "bg-[#f97316] border-[#f97316] text-white",
+    tab: "bg-[#1a1208] border-[#3d2b1a]",
+    tabActive: "bg-[#2d1f0f] text-[#fb923c] shadow-sm border border-[#5c3d1e]",
+    tabInactive: "text-[#6b4e2a] hover:text-[#a8865a]",
+    divider: "border-[#3d2b1a]",
+    badge: "bg-[#3d1f00] text-[#fb923c]",
+    headerBg: "bg-[#0e0905]",
+    emptyBorder: "border-[#3d2b1a] bg-[#1a1208]",
+    confirmBtn: "border-[#3d2b1a] text-[#a8865a] hover:bg-[#2d1f0f]",
+    btnGhost: "bg-white/10 border-white/20 text-white hover:bg-white/20",
+  }
+};
 
-const Toasts = memo(({ items, dark }: { items: any[], dark: boolean }) => (
-  <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none">
-    <AnimatePresence>
-      {items.map(t => {
-        const isErr = t.type === "error";
-        const isWarn = t.type === "warning";
-        const isSucc = t.type === "success";
-        return (
-          <motion.div key={t.id}
-            initial={{ x: 64, opacity: 0, scale: 0.94 }}
-            animate={{ x: 0, opacity: 1, scale: 1 }}
-            exit={{ x: 64, opacity: 0, scale: 0.94 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl min-w-[260px] border backdrop-blur-md font-semibold text-[13.5px]
-              ${dark
-                ? `bg-slate-800/90 text-slate-100 ${isErr ? 'border-red-900/50' : isSucc ? 'border-emerald-900/50' : 'border-slate-700'}`
-                : `bg-white/90 text-slate-800 ${isErr ? 'border-red-100' : isSucc ? 'border-emerald-100' : 'border-slate-100'}`
-              }`}
-          >
-            <span className={`flex-shrink-0 p-1 rounded-full ${isErr ? 'bg-red-100 text-red-600' : isWarn ? 'bg-amber-100 text-amber-600' : isSucc ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
-              {isErr ? <X size={14} strokeWidth={3} /> : isWarn ? <AlertTriangle size={14} strokeWidth={3} /> : <Check size={14} strokeWidth={3} />}
-            </span>
-            {t.msg}
-          </motion.div>
-        );
-      })}
-    </AnimatePresence>
-  </div>
-));
-Toasts.displayName = "Toasts";
+// ─── Base UI Components ───────────────────────────────────────────────────────
 
-// ─── UI Components ────────────────────────────────────────────────────────────
 const Avatar = memo(({ name, size = 36, ring = false }: { name: string, size?: number, ring?: boolean }) => {
-  const [bg] = hashColor(name);
+  const [bg, fg] = hashColor(name);
   return (
-    <div className={`flex items-center justify-center rounded-full text-white font-extrabold flex-shrink-0 tracking-tighter ${ring ? 'ring-2 ring-white dark:ring-slate-900 ring-offset-2 dark:ring-offset-slate-900' : ''}`}
-      style={{ width: size, height: size, background: bg, fontSize: size * 0.38 }}>
-      {initials(name)}
+    <div
+      className={`flex items-center justify-center rounded-full font-bold flex-shrink-0 ${ring ? 'ring-2 ring-white/40' : ''}`}
+      style={{ width: size, height: size, background: bg, color: bg, fontSize: size * 0.38, letterSpacing: "-0.02em" }}
+    >
+      <span style={{ color: fg === "#fff7ed" || fg === "#fffbeb" || fg === "#fefce8" || fg === "#f0fdf4" || fg === "#f0f9ff" || fg === "#faf5ff" || fg === "#fdf2f8" || fg === "#f0fdfa" ? bg.replace("c2410c", "7c1d06").replace("b45309", "713f12").replace("a16207", "713f12").replace("15803d", "14532d").replace("0369a1", "0c4a6e").replace("7c3aed", "4c1d95").replace("be185d", "831843").replace("0f766e", "134e4a") : "#ffffff" }}>
+        {initials(name)}
+      </span>
     </div>
   );
 });
 Avatar.displayName = "Avatar";
 
-function AnimNumber({ value, prefix = "", suffix = "" }: { value: number, prefix?: string, suffix?: string }) {
+// Simplified avatar that just uses bg correctly
+const Av = memo(({ name, size = 36 }: { name: string, size?: number }) => {
+  const colors = [
+    { bg: "#fde8d8", text: "#c2410c" },
+    { bg: "#fef3c7", text: "#b45309" },
+    { bg: "#dcfce7", text: "#15803d" },
+    { bg: "#dbeafe", text: "#1d4ed8" },
+    { bg: "#ede9fe", text: "#7c3aed" },
+    { bg: "#fce7f3", text: "#be185d" },
+    { bg: "#ccfbf1", text: "#0f766e" },
+    { bg: "#fff7ed", text: "#c2410c" },
+  ];
+  let h = 0;
+  if (name) for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % colors.length;
+  const c = colors[Math.abs(h)];
+  return (
+    <div className="flex items-center justify-center rounded-full flex-shrink-0 font-bold"
+      style={{ width: size, height: size, background: c.bg, color: c.text, fontSize: size * 0.38, letterSpacing: "-0.02em" }}>
+      {initials(name)}
+    </div>
+  );
+});
+Av.displayName = "Av";
+
+function AnimNumber({ value }: { value: number }) {
   const [disp, setDisp] = useState(value);
   const prev = useRef(value);
   useEffect(() => {
     if (prev.current === value) return;
-    const start = prev.current, end = value, dur = 600, t0 = performance.now();
+    const start = prev.current, end = value, dur = 500, t0 = performance.now();
     const tick = (now: number) => {
       const p = Math.min((now - t0) / dur, 1);
       const ease = 1 - Math.pow(1 - p, 3);
@@ -151,10 +184,38 @@ function AnimNumber({ value, prefix = "", suffix = "" }: { value: number, prefix
     };
     requestAnimationFrame(tick);
   }, [value]);
-  return <>{prefix}{fmtVND(disp)}{suffix}</>;
+  return <>{fmtVND(disp)}đ</>;
 }
 
+// ─── Shared Styled Components ─────────────────────────────────────────────────
+
+const Card = memo(({ children, dark, className = "" }: { children: React.ReactNode, dark: boolean, className?: string }) => {
+  const t = dark ? tokens.dark : tokens.light;
+  return (
+    <div className={`rounded-2xl border shadow-sm p-5 ${t.card} ${className}`}>
+      {children}
+    </div>
+  );
+});
+Card.displayName = "Card";
+
+const SectionTitle = memo(({ icon, title, dark }: { icon: React.ReactNode, title: string, dark: boolean }) => {
+  const t = dark ? tokens.dark : tokens.light;
+  return (
+    <div className="flex items-center gap-2.5 mb-4">
+      <span className={`${t.textMuted}`}>{icon}</span>
+      <h2 className={`text-base font-bold tracking-tight ${t.text} ${display.className}`}>{title}</h2>
+    </div>
+  );
+});
+SectionTitle.displayName = "SectionTitle";
+
+const Spinner = () => <Loader2 size={16} className="animate-spin" />;
+
+// ─── Modal ───────────────────────────────────────────────────────────────────
+
 const Modal = memo(({ open, onClose, title, children, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     if (open) { document.addEventListener("keydown", h); document.body.style.overflow = "hidden"; }
@@ -165,22 +226,20 @@ const Modal = memo(({ open, onClose, title, children, dark }: any) => {
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 z-[1000] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[1000] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
         >
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 10 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 10 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}
             onClick={e => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-[24px] p-6 shadow-2xl border ${dark ? 'bg-slate-900 border-slate-700/50' : 'bg-white border-slate-100'}`}
+            className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl border ${t.card}`}
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className={`text-lg font-bold ${dark ? 'text-slate-100' : 'text-slate-900'}`}>{title}</h3>
-              <button onClick={onClose} className={`p-1.5 rounded-full transition-colors ${dark ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'}`}>
-                <X size={16} strokeWidth={2.5} />
+              <h3 className={`text-base font-bold ${t.text} ${display.className}`}>{title}</h3>
+              <button onClick={onClose} className={`p-1.5 rounded-full ${t.pill} border transition-colors`} aria-label="Đóng">
+                <X size={14} strokeWidth={2.5} />
               </button>
             </div>
             {children}
@@ -192,59 +251,68 @@ const Modal = memo(({ open, onClose, title, children, dark }: any) => {
 });
 Modal.displayName = "Modal";
 
-const ConfirmModal = memo(({ open, onClose, onConfirm, title, message, dark }: any) => (
-  <Modal open={open} onClose={onClose} title={title} dark={dark}>
-    <p className={`text-[14.5px] leading-relaxed mb-6 ${dark ? 'text-slate-400' : 'text-slate-600'}`}>{message}</p>
-    <div className="flex justify-end gap-3">
-      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }} onClick={onClose}
-        className={`px-4 py-2.5 rounded-xl font-bold text-sm border transition-colors ${dark ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-        Hủy bỏ
-      </motion.button>
-      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }} onClick={() => { onConfirm(); onClose(); }}
-        className="px-4 py-2.5 rounded-xl font-bold text-sm bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/20 transition-colors">
-        Xác nhận
-      </motion.button>
-    </div>
-  </Modal>
-));
+const ConfirmModal = memo(({ open, onClose, onConfirm, title, message, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
+  return (
+    <Modal open={open} onClose={onClose} title={title} dark={dark}>
+      <p className={`text-sm leading-relaxed mb-5 ${t.textMuted}`}>{message}</p>
+      <div className="flex gap-2.5">
+        <button onClick={onClose} className={`flex-1 py-2.5 rounded-xl font-semibold text-sm border transition-colors ${t.confirmBtn}`}>
+          Hủy bỏ
+        </button>
+        <button onClick={() => { onConfirm(); onClose(); }}
+          className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-rose-500 hover:bg-rose-600 text-white transition-colors">
+          Xác nhận
+        </button>
+      </div>
+    </Modal>
+  );
+});
 ConfirmModal.displayName = "ConfirmModal";
 
-// ─── Feature Components ───────────────────────────────────────────────────────
+// ─── EmptySlate ───────────────────────────────────────────────────────────────
+
+const EmptySlate = memo(({ icon, title, sub, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
+  return (
+    <div className={`text-center py-10 rounded-2xl border-2 border-dashed ${t.emptyBorder}`}>
+      <div className={`flex justify-center mb-3 ${t.textFaint}`}>{icon}</div>
+      <div className={`font-bold text-sm mb-1 ${t.text}`}>{title}</div>
+      <div className={`text-xs font-medium ${t.textMuted}`}>{sub}</div>
+    </div>
+  );
+});
+EmptySlate.displayName = "EmptySlate";
+
+// ─── StatCards ───────────────────────────────────────────────────────────────
+
 const StatCards = memo(({ members, expenses, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
   const total = useMemo(() => expenses.reduce((s: number, e: any) => s + e.amount, 0), [expenses]);
   const topSpender = useMemo(() => {
     if (!members.length) return null;
     const m: Record<string, number> = {}; members.forEach((x: any) => (m[x.id] = 0));
     expenses.forEach((e: any) => (m[e.paidBy] = (m[e.paidBy] || 0) + e.amount));
-    const id = Object.entries(m).sort(([, a], [, b]) => b - a)[0]?.[0];
+    const id = Object.entries(m).sort(([, a], [, b]) => (b as number) - (a as number))[0]?.[0];
     return members.find((x: any) => x.id === id);
   }, [members, expenses]);
 
-  const stats = [
-    { label: "Tổng chi tiêu", val: total, isAmt: true, sub: `${expenses.length} giao dịch`, icon: <CircleDollarSign size={18} />, color: "text-indigo-500", bg: dark ? "bg-indigo-500/10" : "bg-indigo-50" },
-    { label: "Thành viên", val: members.length, isAmt: false, sub: "trong nhóm", icon: <UserRound size={18} />, color: "text-emerald-500", bg: dark ? "bg-emerald-500/10" : "bg-emerald-50" },
-    { label: "Top spender", val: topSpender?.name || "—", isAmt: false, sub: "trả nhiều nhất", icon: <TrendingUp size={18} />, color: "text-violet-500", bg: dark ? "bg-violet-500/10" : "bg-violet-50" },
-  ];
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {stats.map((s, i) => (
+    <div className="grid grid-cols-3 gap-2.5">
+      {[
+        { label: "Tổng chi", value: <AnimNumber value={total} />, icon: <CircleDollarSign size={15} />, accent: "text-[#f97316]" },
+        { label: "Thành viên", value: members.length, icon: <UserRound size={15} />, accent: "text-[#facc15]" },
+        { label: "Top chi", value: topSpender?.name?.split(" ").pop() || "—", icon: <TrendingUp size={15} />, accent: "text-[#f97316]" },
+      ].map((s, i) => (
         <motion.div key={s.label}
-          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.1, type: "spring", stiffness: 300, damping: 25 }}
-          className={`p-5 rounded-[20px] border shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5
-            ${dark ? 'bg-slate-800/40 border-slate-700/50 backdrop-blur-md' : 'bg-white border-slate-100'}`}
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.08, type: "spring", stiffness: 400, damping: 30 }}
+          className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-xl p-3"
         >
-          <div className="flex justify-between items-start mb-3">
-            <div className={`text-xs font-bold uppercase tracking-wider ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{s.label}</div>
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${s.bg} ${s.color}`}>
-              {s.icon}
-            </div>
+          <div className={`flex items-center gap-1 text-white/60 text-[10px] font-semibold uppercase tracking-wide mb-1.5`}>
+            {s.icon} {s.label}
           </div>
-          <div className={`text-2xl font-black tracking-tight leading-none mb-1 break-words ${dark ? 'text-slate-50' : 'text-slate-900'}`}>
-            {s.isAmt ? <AnimNumber value={s.val} suffix="đ" /> : s.val}
-          </div>
-          <div className={`text-xs font-semibold ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{s.sub}</div>
+          <div className="text-white font-bold text-sm leading-tight truncate">{s.value}</div>
         </motion.div>
       ))}
     </div>
@@ -252,469 +320,539 @@ const StatCards = memo(({ members, expenses, dark }: any) => {
 });
 StatCards.displayName = "StatCards";
 
+// ─── MemberList ───────────────────────────────────────────────────────────────
+
 const MemberList = memo(({ members, onAdd, onRemove, onEdit, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
   const [name, setName] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [delTarget, setDelTarget] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
-  const submit = useCallback((e: React.FormEvent) => {
+  const submit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    onAdd(name.trim()); setName("");
-  }, [name, onAdd]);
+    if (!name.trim() || loading) return;
+    setLoading(true);
+    await onAdd(name.trim());
+    setName("");
+    setLoading(false);
+  }, [name, onAdd, loading]);
 
   const commitEdit = useCallback((id: string) => {
     if (!editName.trim()) return;
-    onEdit(id, editName.trim()); setEditId(null); toast("Đã cập nhật tên", "success");
+    onEdit(id, editName.trim());
+    setEditId(null);
   }, [editName, onEdit]);
 
   return (
     <div>
-      <form onSubmit={submit} className="flex gap-2 mb-6">
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên thành viên…"
-          className={`flex-1 rounded-xl px-4 py-2.5 outline-none font-medium border transition-all focus:ring-2 focus:ring-indigo-500/20
-            ${dark ? 'bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500 focus:bg-white'}`}
+      <form onSubmit={submit} className="flex gap-2 mb-4">
+        <input
+          value={name} onChange={e => setName(e.target.value)}
+          placeholder="Tên thành viên…"
+          aria-label="Tên thành viên"
+          className={`flex-1 rounded-xl px-4 h-12 outline-none font-medium border-2 transition-all focus:ring-2 focus:ring-[#f97316]/20 text-sm ${t.input}`}
         />
-        <motion.button type="submit" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
-          className="bg-slate-900 hover:bg-slate-800 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-1.5 transition-colors shadow-md">
-          <Plus size={16} strokeWidth={2.5} /> Thêm
+        <motion.button
+          type="submit"
+          disabled={loading || !name.trim()}
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
+          className="h-12 px-5 rounded-xl font-bold text-sm flex items-center gap-2 bg-[#f97316] hover:bg-[#ea6c0a] text-white transition-colors shadow-md shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px] justify-center"
+        >
+          {loading ? <Spinner /> : <><Plus size={16} strokeWidth={2.5} /> Thêm</>}
         </motion.button>
       </form>
 
       {members.length === 0 ? (
-        <EmptySlate icon={<Users size={32} strokeWidth={1.5} />} title="Nhóm chưa có ai" sub="Thêm thành viên để bắt đầu quản lý chi tiêu" dark={dark} />
+        <EmptySlate icon={<Users size={28} strokeWidth={1.5} />} title="Chưa có thành viên" sub="Nhập tên và bấm Thêm để bắt đầu" dark={dark} />
       ) : (
-        <motion.div className="flex flex-wrap gap-2.5" layout>
+        <div className="flex flex-wrap gap-2">
           <AnimatePresence>
             {members.map((m: any) => (
-              <motion.div key={m.id} layout initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className={`group flex items-center gap-2 pr-2.5 p-1 rounded-full border transition-all hover:shadow-md cursor-default
-                  ${dark ? 'bg-slate-800/40 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300'}`}
+              <motion.div key={m.id} layout
+                initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                className={`group flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border-2 transition-all ${t.card} ${t.cardHover}`}
               >
-                <Avatar name={m.name} size={30} />
+                <Av name={m.name} size={28} />
                 {editId === m.id ? (
                   <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") commitEdit(m.id); if (e.key === "Escape") setEditId(null); }}
-                    className={`w-24 px-2 py-1 text-[13px] font-bold rounded-md outline-none border focus:ring-2
-                      ${dark ? 'bg-slate-900 border-slate-600 text-white focus:ring-indigo-500/30' : 'bg-slate-50 border-slate-300 text-slate-900 focus:ring-indigo-500/20'}`}
+                    aria-label="Sửa tên"
+                    className={`w-24 px-2 py-0.5 text-xs font-bold rounded-lg outline-none border-2 transition-all ${t.input}`}
                   />
                 ) : (
-                  <span className={`text-[14px] font-bold tracking-tight ${dark ? 'text-slate-200' : 'text-slate-700'}`}>{m.name}</span>
+                  <span className={`text-sm font-semibold ${t.text}`}>{m.name}</span>
                 )}
-                
-                <div className="flex items-center gap-1 overflow-hidden w-0 opacity-0 group-hover:w-auto group-hover:opacity-100 transition-all duration-200 ease-out">
+                <div className="flex items-center gap-1 overflow-hidden w-0 opacity-0 group-hover:w-auto group-hover:opacity-100 transition-all duration-200">
                   {editId === m.id ? (
-                    <button onClick={() => commitEdit(m.id)} className="p-1.5 rounded-full text-emerald-600 bg-emerald-100 hover:bg-emerald-200 transition-colors"><Check size={12} strokeWidth={3} /></button>
+                    <button onClick={() => commitEdit(m.id)} aria-label="Lưu" className="p-1 rounded-full text-emerald-600 bg-emerald-100 hover:bg-emerald-200 transition-colors">
+                      <Check size={11} strokeWidth={3} />
+                    </button>
                   ) : (
-                    <button onClick={() => { setEditId(m.id); setEditName(m.name); }} className={`p-1.5 rounded-full transition-colors ${dark ? 'text-indigo-400 bg-indigo-500/20 hover:bg-indigo-500/40' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'}`}><Pencil size={12} strokeWidth={2.5} /></button>
+                    <button onClick={() => { setEditId(m.id); setEditName(m.name); }} aria-label="Sửa"
+                      className={`p-1 rounded-full transition-colors ${t.pill} border`}>
+                      <Pencil size={11} strokeWidth={2.5} />
+                    </button>
                   )}
-                  <button onClick={() => setDelTarget(m)} className={`p-1.5 rounded-full transition-colors ${dark ? 'text-rose-400 bg-rose-500/20 hover:bg-rose-500/40' : 'text-rose-600 bg-rose-50 hover:bg-rose-100'}`}><Trash2 size={12} strokeWidth={2.5} /></button>
+                  <button onClick={() => setDelTarget(m)} aria-label="Xóa"
+                    className="p-1 rounded-full text-rose-500 bg-rose-50 hover:bg-rose-100 border border-rose-100 transition-colors">
+                    <Trash2 size={11} strokeWidth={2.5} />
+                  </button>
                 </div>
               </motion.div>
             ))}
           </AnimatePresence>
-        </motion.div>
+        </div>
       )}
 
       <ConfirmModal open={!!delTarget} onClose={() => setDelTarget(null)}
-        onConfirm={() => { onRemove(delTarget.id); toast(`Đã xóa ${delTarget.name}`, "info"); }}
+        onConfirm={() => onRemove(delTarget.id)}
         title="Xóa thành viên" dark={dark}
-        message={`Xóa "${delTarget?.name}" và các khoản chi liên quan? Hành động này không thể hoàn tác.`} />
+        message={`Xóa "${delTarget?.name}" sẽ xóa các khoản chi liên quan. Không thể hoàn tác.`} />
     </div>
   );
 });
 MemberList.displayName = "MemberList";
 
+// ─── AddExpenseForm ───────────────────────────────────────────────────────────
+
+const QUICK_AMOUNTS = [50000, 100000, 200000, 500000];
+
 const AddExpenseForm = memo(({ members, onAdd, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [payer, setPayer] = useState("");
   const [split, setSplit] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const toggleSplit = useCallback((id: string) => setSplit(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]), []);
   const selAll = useCallback(() => setSplit(members.map((m: any) => m.id)), [members]);
   const clearAll = useCallback(() => setSplit([]), []);
 
-  const submit = useCallback((e: React.FormEvent) => {
+  const addQuick = useCallback((amt: number) => {
+    const cur = parseAmt(amount);
+    setAmount(fmtInput(String(cur + amt)));
+  }, [amount]);
+
+  const submit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseAmt(amount);
     if (!title.trim() || !parsed || !payer || !split.length) {
-      toast("Vui lòng điền đầy đủ thông tin!", "error"); return;
+      toast.error("Vui lòng điền đầy đủ thông tin!"); return;
     }
-    onAdd({ title: title.trim(), amount: parsed, paidBy: payer, splitBetween: split });
+    setLoading(true);
+    await onAdd({ title: title.trim(), amount: parsed, paidBy: payer, splitBetween: split });
     setTitle(""); setAmount(""); setSplit([]);
+    setLoading(false);
   }, [title, amount, payer, split, onAdd]);
 
   const perHead = split.length ? Math.round(parseAmt(amount) / split.length) : 0;
-  const inputCls = `w-full rounded-xl px-4 py-3 outline-none font-semibold border transition-all focus:ring-2 focus:ring-indigo-500/20 ${dark ? 'bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500 focus:bg-white'}`;
-  const labelCls = `block text-xs font-bold uppercase tracking-wider mb-2 ${dark ? 'text-slate-400' : 'text-slate-500'}`;
+
+  const inputCls = `w-full rounded-xl px-4 h-12 outline-none font-medium border-2 transition-all focus:ring-2 focus:ring-[#f97316]/20 text-sm ${t.input}`;
+  const labelCls = `block text-[10px] font-bold uppercase tracking-wider mb-1.5 ${t.textMuted}`;
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-5">
-      <div className="flex gap-3">
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      {/* Tiêu đề + Số tiền */}
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="flex-1">
-          <label className={labelCls}>Mục chi tiêu</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="VD: Ăn tối, Taxi..." className={inputCls} />
+          <label className={labelCls} htmlFor="exp-title">Mục chi tiêu</label>
+          <input id="exp-title" value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="VD: Ăn tối, Taxi, Cà phê…"
+            className={inputCls} />
         </div>
-        <div className="w-[140px]">
-          <label className={labelCls}>Số tiền (đ)</label>
-          <input type="text" inputMode="numeric" value={amount}
-            onChange={e => setAmount(e.target.value)} onBlur={e => setAmount(e.target.value ? fmtInput(e.target.value) : "")}
-            placeholder="0" className={`${inputCls} text-right text-indigo-600 dark:text-indigo-400 font-black`} />
+        <div className="sm:w-40">
+          <label className={labelCls} htmlFor="exp-amount">Số tiền (đ)</label>
+          <input id="exp-amount" type="text" inputMode="numeric"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            onBlur={e => setAmount(e.target.value ? fmtInput(e.target.value) : "")}
+            placeholder="0"
+            className={`${inputCls} text-right font-bold text-[#f97316]`} />
         </div>
       </div>
 
-      <div className={`p-5 rounded-2xl border ${dark ? 'bg-slate-800/30 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}>
-        <label className={labelCls}>Người thanh toán</label>
-        <div className="flex flex-wrap gap-2 mb-5">
-          {members.map((m: any) => (
-            <motion.button type="button" key={m.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }} onClick={() => setPayer(m.id)}
-              className={`flex items-center gap-2 pr-3 p-1 rounded-full text-[13.5px] font-bold border transition-colors
-                ${payer === m.id ? 'bg-indigo-500 border-indigo-500 text-white shadow-md shadow-indigo-500/20' : dark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
-            >
-              <Avatar name={m.name} size={24} ring={payer === m.id} /> {m.name}
+      {/* Quick Add Pills */}
+      <div>
+        <label className={labelCls}>Thêm nhanh</label>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_AMOUNTS.map(amt => (
+            <motion.button key={amt} type="button"
+              whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              onClick={() => addQuick(amt)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-colors ${t.pill}`}>
+              +{fmtVND(amt)}
             </motion.button>
           ))}
         </div>
+      </div>
 
-        <div className="flex justify-between items-center mb-3">
-          <label className={`${labelCls} mb-0`}>Chia đều cho</label>
-          <div className="flex gap-2">
-            <button type="button" onClick={selAll} className={`text-[11.5px] font-bold px-2.5 py-1 rounded-md transition-colors ${dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>Tất cả</button>
-            <button type="button" onClick={clearAll} className={`text-[11.5px] font-bold px-2.5 py-1 rounded-md transition-colors ${dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>Bỏ hết</button>
+      {/* Payer + Split */}
+      <div className={`p-4 rounded-xl border-2 ${t.card} flex flex-col gap-4`}>
+        {/* Người thanh toán */}
+        <div>
+          <label className={labelCls}>Người thanh toán</label>
+          <div className="flex flex-wrap gap-2">
+            {members.map((m: any) => (
+              <motion.button key={m.id} type="button"
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
+                onClick={() => setPayer(m.id)}
+                aria-pressed={payer === m.id}
+                className={`flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full border-2 text-xs font-bold transition-colors ${payer === m.id ? t.pillActive : t.pill}`}>
+                <Av name={m.name} size={22} /> {m.name}
+              </motion.button>
+            ))}
           </div>
         </div>
-        
-        <div className="flex flex-wrap gap-2">
-          {members.map((m: any) => {
-            const sel = split.includes(m.id);
-            return (
-              <motion.label key={m.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
-                className={`flex items-center gap-2 pr-3 p-1 rounded-full text-[13.5px] font-bold border cursor-pointer transition-colors select-none
-                  ${sel ? 'bg-emerald-500 border-emerald-500 text-white shadow-md shadow-emerald-500/20' : dark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
-              >
-                <input type="checkbox" className="hidden" checked={sel} onChange={() => toggleSplit(m.id)} />
-                <Avatar name={m.name} size={24} ring={sel} /> {m.name}
-                {sel && perHead > 0 && <span className="text-[10px] font-bold opacity-80 ml-1 bg-white/20 px-1.5 py-0.5 rounded-md">{fmtVND(perHead)}đ</span>}
-              </motion.label>
-            );
-          })}
+
+        {/* Chia cho */}
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <label className={`${labelCls} mb-0`}>Chia đều cho</label>
+            <div className="flex gap-1.5">
+              <button type="button" onClick={selAll}
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-colors ${t.pill}`}>Tất cả</button>
+              <button type="button" onClick={clearAll}
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-colors ${t.pill}`}>Bỏ hết</button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {members.map((m: any) => {
+              const sel = split.includes(m.id);
+              return (
+                <motion.label key={m.id}
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
+                  className={`flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full border-2 text-xs font-bold cursor-pointer select-none transition-colors ${sel ? 'bg-emerald-500 border-emerald-500 text-white' : t.pill}`}>
+                  <input type="checkbox" className="hidden" checked={sel} onChange={() => toggleSplit(m.id)} />
+                  <Av name={m.name} size={22} /> {m.name}
+                  {sel && perHead > 0 && (
+                    <span className="text-[9px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full">{fmtVND(perHead)}đ</span>
+                  )}
+                </motion.label>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      <motion.button type="submit" whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
-        className="w-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/30 rounded-xl px-5 py-3.5 font-bold flex items-center justify-center gap-2 transition-all mt-1">
-        <Plus size={18} strokeWidth={2.5} /> Thêm Khoản Chi
+      {/* Submit */}
+      <motion.button type="submit"
+        disabled={loading}
+        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
+        className="w-full h-12 bg-[#f97316] hover:bg-[#ea6c0a] text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-orange-500/25 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#f97316]/40">
+        {loading ? <><Spinner /> Đang lưu…</> : <><Plus size={17} strokeWidth={2.5} /> Thêm Khoản Chi</>}
       </motion.button>
     </form>
   );
 });
 AddExpenseForm.displayName = "AddExpenseForm";
 
+// ─── ExpenseList ──────────────────────────────────────────────────────────────
+
 const ExpenseList = memo(({ expenses, members, onDelete, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
   const [del, setDel] = useState<any>(null);
   const getName = useCallback((id: string) => members.find((m: any) => m.id === id)?.name || "?", [members]);
 
-  if (!expenses.length) return <EmptySlate icon={<ReceiptText size={36} strokeWidth={1.5} />} title="Chưa có giao dịch nào" sub="Lịch sử chi tiêu sẽ hiển thị ở đây" dark={dark} />;
+  if (!expenses.length) return (
+    <EmptySlate icon={<ReceiptText size={28} strokeWidth={1.5} />} title="Chưa có giao dịch nào" sub="Khoản chi sẽ xuất hiện ở đây" dark={dark} />
+  );
 
   return (
-    <motion.div className="flex flex-col gap-2.5" layout>
+    <div className="flex flex-col gap-2.5">
       <AnimatePresence>
         {[...expenses].reverse().map((exp: any, idx: number) => {
-          const [ac] = hashColor(getName(exp.paidBy));
+          const payerName = getName(exp.paidBy);
           return (
-            <motion.div key={exp.id} layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 30, scale: 0.95 }} transition={{ type: "spring", stiffness: 400, damping: 30, delay: idx < 5 ? idx * 0.04 : 0 }}
-              className={`group flex items-center gap-3.5 p-3.5 rounded-2xl border transition-all hover:shadow-md
-                ${dark ? 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+            <motion.div key={exp.id} layout
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, x: 20, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30, delay: idx < 5 ? idx * 0.03 : 0 }}
+              className={`group flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all hover:shadow-sm ${t.card} ${t.cardHover}`}
             >
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: ac + "1A", color: ac }}>
-                <ReceiptText size={20} strokeWidth={2} />
+              {/* Icon */}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${dark ? 'bg-[#3d2b1a]' : 'bg-[#fef3e2]'}`}>
+                <Coffee size={18} className="text-[#f97316]" />
               </div>
+
+              {/* Info */}
               <div className="flex-1 min-w-0">
-                <div className={`font-bold text-[15px] mb-0.5 truncate ${dark ? 'text-slate-100' : 'text-slate-900'}`}>{exp.title}</div>
-                <div className={`flex items-center gap-1.5 text-xs font-semibold ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  <span className="px-1.5 py-0.5 rounded-md" style={{ backgroundColor: ac + "1A", color: ac }}>{getName(exp.paidBy)}</span>
-                  <span className="opacity-40">•</span>
-                  <span>Chia {exp.splitBetween?.length || 0}</span>
-                  <span className="opacity-40">•</span>
-                  <span className="font-medium">{timeAgo(exp.createdAt)}</span>
+                <div className={`font-bold text-sm mb-0.5 truncate ${t.text}`}>{exp.title}</div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>{payerName}</span>
+                  <span className={`text-[10px] font-semibold ${t.textFaint}`}>chia {exp.splitBetween?.length || 0}</span>
+                  <span className={`text-[10px] ${t.textFaint}`}>• {timeAgo(exp.createdAt)}</span>
                 </div>
               </div>
+
+              {/* Amount */}
               <div className="text-right flex-shrink-0">
-                <div className={`font-black text-[16px] tracking-tight ${dark ? 'text-indigo-400' : 'text-indigo-600'}`}>{fmtVND(exp.amount)}đ</div>
-                <div className={`text-[11px] font-bold mt-0.5 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{fmtVND(Math.round(exp.amount / (exp.splitBetween?.length || 1)))}đ/người</div>
+                <div className={`font-black text-[15px] tracking-tight text-[#f97316]`}>{fmtVND(exp.amount)}đ</div>
+                <div className={`text-[10px] font-semibold ${t.textMuted}`}>{fmtVND(Math.round(exp.amount / (exp.splitBetween?.length || 1)))}đ/ng</div>
               </div>
-              <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => setDel(exp)}
-                className={`ml-1 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all
-                  ${dark ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'}`}>
-                <Trash2 size={14} strokeWidth={2.5} />
+
+              {/* Delete */}
+              <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                onClick={() => setDel(exp)} aria-label="Xóa khoản chi"
+                className="w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-rose-500 bg-rose-50 hover:bg-rose-100 border border-rose-100 ml-1 flex-shrink-0">
+                <Trash2 size={13} strokeWidth={2.5} />
               </motion.button>
             </motion.div>
           );
         })}
       </AnimatePresence>
-      <ConfirmModal open={!!del} onClose={() => setDel(null)} onConfirm={() => { onDelete(del.id); }} title="Xóa giao dịch" dark={dark} message={`Bạn có chắc muốn xóa khoản "${del?.title}" (${fmtVND(del?.amount || 0)}đ) không?`} />
-    </motion.div>
+
+      <ConfirmModal open={!!del} onClose={() => setDel(null)} onConfirm={() => onDelete(del.id)}
+        title="Xóa giao dịch" dark={dark}
+        message={`Xóa khoản "${del?.title}" (${fmtVND(del?.amount || 0)}đ)?`} />
+    </div>
   );
 });
 ExpenseList.displayName = "ExpenseList";
 
+// ─── Settlement ───────────────────────────────────────────────────────────────
+
 const Settlement = memo(({ members, expenses, dark }: any) => {
+  const t = dark ? tokens.dark : tokens.light;
   const debts = useMemo(() => calculateOptimizedDebts(members, expenses), [members, expenses]);
   const getName = useCallback((id: string) => members.find((m: any) => m.id === id)?.name || "?", [members]);
 
   if (!debts.length) return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12">
-      <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }} className="text-5xl mb-4">🎉</motion.div>
-      <div className={`text-lg font-black mb-1 ${dark ? 'text-slate-100' : 'text-slate-900'}`}>Hòa cả làng!</div>
-      <div className={`text-sm font-semibold ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Không ai nợ ai, một chuyến đi tuyệt vời.</div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-10">
+      <div className="text-4xl mb-3">🎉</div>
+      <div className={`text-base font-black mb-1 ${t.text} ${display.className}`}>Hòa cả làng!</div>
+      <div className={`text-sm ${t.textMuted}`}>Không ai nợ ai, chuyến đi thật tuyệt.</div>
     </motion.div>
   );
 
   return (
-    <motion.div className="flex flex-col gap-3" layout>
+    <div className="flex flex-col gap-3">
       <AnimatePresence>
-        {debts.map((d: any, i: number) => {
-          const fn = getName(d.from), tn = getName(d.to);
-          return (
-            <motion.div key={i} layout initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: i * 0.05, type: "spring", stiffness: 400, damping: 30 }}
-              className={`flex items-center gap-4 p-4 rounded-2xl border shadow-sm hover:shadow-md transition-shadow
-                ${dark ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-100'}`}
-            >
-              <div className="flex flex-col items-center min-w-[60px] gap-1.5">
-                <Avatar name={fn} size={42} ring />
-                <span className="text-[11px] font-bold text-rose-500 truncate w-[64px] text-center">{fn}</span>
-              </div>
+        {debts.map((d: any, i: number) => (
+          <motion.div key={i} layout
+            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.06, type: "spring", stiffness: 400, damping: 30 }}
+            className={`flex items-center gap-3 p-4 rounded-2xl border-2 ${t.card}`}
+          >
+            <div className="flex flex-col items-center gap-1 min-w-[52px]">
+              <Av name={getName(d.from)} size={40} />
+              <span className={`text-[10px] font-bold text-rose-500 text-center w-[58px] truncate`}>{getName(d.from)}</span>
+            </div>
 
-              <div className="flex-1 flex flex-col items-center">
-                <div className={`font-black text-lg tracking-tight mb-1.5 ${dark ? 'text-indigo-400' : 'text-indigo-600'}`}>{fmtVND(d.amount)}đ</div>
-                <div className="flex items-center w-full max-w-[120px] gap-1.5">
-                  <div className="h-1 flex-1 rounded-full bg-gradient-to-r from-rose-400/50 to-indigo-500/50" />
-                  <ArrowRight size={14} className="text-indigo-500" strokeWidth={3} />
-                  <div className="h-1 flex-1 rounded-full bg-gradient-to-r from-indigo-500/50 to-emerald-500/50" />
-                </div>
-                <div className={`text-[10px] font-bold uppercase tracking-widest mt-1.5 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>Chuyển cho</div>
+            <div className="flex-1 flex flex-col items-center">
+              <span className="font-black text-base text-[#f97316] tracking-tight mb-1">{fmtVND(d.amount)}đ</span>
+              <div className="flex items-center gap-1 w-full max-w-[100px]">
+                <div className="h-px flex-1 bg-gradient-to-r from-rose-300 to-[#f97316]" />
+                <ArrowRight size={12} className="text-[#f97316]" strokeWidth={3} />
+                <div className="h-px flex-1 bg-gradient-to-r from-[#f97316] to-emerald-400" />
               </div>
+              <span className={`text-[9px] font-bold uppercase tracking-widest mt-1 ${t.textFaint}`}>chuyển cho</span>
+            </div>
 
-              <div className="flex flex-col items-center min-w-[60px] gap-1.5">
-                <Avatar name={tn} size={42} ring />
-                <span className="text-[11px] font-bold text-emerald-500 truncate w-[64px] text-center">{tn}</span>
-              </div>
-            </motion.div>
-          );
-        })}
+            <div className="flex flex-col items-center gap-1 min-w-[52px]">
+              <Av name={getName(d.to)} size={40} />
+              <span className={`text-[10px] font-bold text-emerald-500 text-center w-[58px] truncate`}>{getName(d.to)}</span>
+            </div>
+          </motion.div>
+        ))}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 });
 Settlement.displayName = "Settlement";
 
-const EmptySlate = memo(({ icon, title, sub, dark }: any) => (
-  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`text-center py-10 rounded-2xl border-2 border-dashed ${dark ? 'border-slate-700/50 bg-slate-800/20' : 'border-slate-200 bg-slate-50/50'}`}>
-    <div className={`flex justify-center mb-3 ${dark ? 'text-slate-600' : 'text-slate-300'}`}>{icon}</div>
-    <div className={`font-bold text-[15px] mb-1 ${dark ? 'text-slate-300' : 'text-slate-700'}`}>{title}</div>
-    <div className={`text-[13px] font-medium ${dark ? 'text-slate-500' : 'text-slate-400'}`}>{sub}</div>
-  </motion.div>
-));
-EmptySlate.displayName = "EmptySlate";
+// ─── Main App ─────────────────────────────────────────────────────────────────
 
-const Card = memo(({ title, icon, children, dark, accentClass = "text-indigo-500 bg-indigo-500/10" }: any) => (
-  <div className={`rounded-[24px] p-6 shadow-xl border transition-colors ${dark ? 'bg-[#0f172a] border-slate-800 shadow-none' : 'bg-white border-slate-100 shadow-slate-200/40'}`}>
-    <div className="flex items-center gap-3 mb-5">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accentClass}`}>
-        {icon}
-      </div>
-      <h2 className={`text-[17px] font-extrabold tracking-tight ${dark ? 'text-slate-100' : 'text-slate-900'}`}>{title}</h2>
-    </div>
-    {children}
-  </div>
-));
-Card.displayName = "Card";
-
-
-// ─── Main App Page ────────────────────────────────────────────────────────────
 export default function SplitBillApp() {
-  
-  // 1. STATE MANAGEMENT
   const [members, setMembers] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
-  const [dark, setDark] = useLS("split_dark_v3", false);
+  const [dark, setDark] = useLS("split_dark_v4", false);
   const [tab, setTab] = useState("expenses");
   const [resetOpen, setResetOpen] = useState(false);
-  const toasts = useToasts();
   const [isMounted, setIsMounted] = useState(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
-  // LƯU Ý: Thay vì hardcode cổng 8080, bạn có thể đổi thành 8081 nếu máy chủ Java của bạn đang chạy ở cổng 8081.
-// Sau này khi có link backend từ Render/Railway, bạn chỉ cần thay vào đây
-// Sửa dòng này (khoảng dòng 395)
-const API_URL = "http://192.168.0.103:8080/api";
-
-  // 2. FETCH DATA TỪ JAVA BACKEND
   useEffect(() => {
     setIsMounted(true);
-    
-    // Gọi API lấy Members
     fetch(`${API_URL}/members`)
       .then(res => res.json())
       .then(data => setMembers(data))
       .catch(err => console.error("Lỗi kết nối Java API Members:", err));
-
-    // Gọi API lấy Expenses
     fetch(`${API_URL}/expenses`)
       .then(res => res.json())
       .then(data => setExpenses(data))
       .catch(err => console.error("Lỗi kết nối Java API Expenses:", err));
   }, []);
 
-  // 3. API CALLS (THÊM / SỬA / XÓA)
-  
-  // THÊM THÀNH VIÊN
   const addMember = useCallback(async (name: string) => {
     try {
       const res = await fetch(`${API_URL}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name })
       });
-      if (!res.ok) throw new Error("Network response was not ok");
+      if (!res.ok) throw new Error();
       const newMember = await res.json();
       setMembers((p: any) => [...p, newMember]);
-      toast("Đã lưu thành viên vào Database!", "success");
-    } catch (error) {
-      toast("Lỗi kết nối máy chủ Java!", "error");
+      toast.success("Đã thêm thành viên!");
+    } catch {
+      toast.error("Lỗi kết nối máy chủ!");
     }
-  }, [toasts]);
+  }, []);
 
-  // THÊM KHOẢN CHI
   const addExpense = useCallback(async (exp: any) => {
     try {
       const res = await fetch(`${API_URL}/expenses`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(exp)
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exp)
       });
-      if (!res.ok) throw new Error("Network response was not ok");
+      if (!res.ok) throw new Error();
       const newExpense = await res.json();
       setExpenses((p: any) => [...p, newExpense]);
-      toast("Đã lưu khoản chi vào Database!", "success");
-    } catch (error) {
-      toast("Lỗi kết nối máy chủ Java!", "error");
+      toast.success("Đã lưu khoản chi!");
+    } catch {
+      toast.error("Lỗi kết nối máy chủ!");
     }
-  }, [toasts]);
+  }, []);
 
-  // XÓA KHOẢN CHI
   const delExpense = useCallback(async (id: string) => {
     try {
       await fetch(`${API_URL}/expenses/${id}`, { method: "DELETE" });
       setExpenses((p: any) => p.filter((e: any) => e.id !== id));
-      toast("Đã xóa khoản chi khỏi Database", "info");
-    } catch (error) {
-      toast("Lỗi kết nối máy chủ Java!", "error");
+      toast.success("Đã xóa khoản chi");
+    } catch {
+      toast.error("Lỗi kết nối máy chủ!");
     }
-  }, [toasts]);
+  }, []);
 
-  // XÓA THÀNH VIÊN (Tạm thời xử lý trên giao diện, cần thêm API xóa Member trên Java sau)
   const removeMember = useCallback((id: string) => {
     setMembers((p: any) => p.filter((m: any) => m.id !== id));
-    toast("Mẹo: Cần tạo thêm hàm Xóa bên Java!", "warning");
-  }, [toasts]);
+    toast("Mẹo: Cần tạo thêm API xóa Member bên Java!", { icon: "⚠️" });
+  }, []);
 
-  // SỬA TÊN THÀNH VIÊN (Tạm thời xử lý trên giao diện)
   const editMember = useCallback((id: string, name: string) => {
     setMembers((p: any) => p.map((m: any) => m.id === id ? { ...m, name } : m));
   }, []);
 
-  const resetAll = useCallback(() => { 
-    toast("Mẹo: Cần tạo thêm hàm Reset bên Java!", "warning"); 
+  const resetAll = useCallback(() => {
+    toast("Mẹo: Cần tạo thêm API Reset bên Java!", { icon: "⚠️" });
     setResetOpen(false);
-  }, [toasts]);
+  }, []);
+
+  const t = dark ? tokens.dark : tokens.light;
 
   if (!isMounted) return null;
 
   return (
-    <div className={`${font.className} min-h-screen transition-colors duration-300 ${dark ? "bg-[#0B1120] text-slate-200" : "bg-slate-50 text-slate-800"}`}>
-      <Toasts items={toasts} dark={dark} />
+    <div className={`${body.className} min-h-screen transition-colors duration-300 ${t.bg}`}>
+      {/* Toast Config */}
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            borderRadius: "12px",
+            fontFamily: body.style.fontFamily,
+            fontSize: "13px",
+            fontWeight: 600,
+            background: dark ? "#221a0e" : "#fffdf9",
+            color: dark ? "#f0e6d3" : "#3d2b1a",
+            border: `1px solid ${dark ? "#3d2b1a" : "#e8dfd0"}`,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+          },
+          success: { iconTheme: { primary: "#22c55e", secondary: "white" } },
+          error: { iconTheme: { primary: "#ef4444", secondary: "white" } },
+        }}
+      />
 
-      {/* Modern Fintech Header */}
-      <div className="relative bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 pb-12 pt-8 rounded-b-[2.5rem] shadow-xl shadow-indigo-900/20 overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-indigo-900/30 blur-3xl pointer-events-none" />
+      {/* Header */}
+      <div className={`${t.headerBg} pb-14 pt-8 relative overflow-hidden`}>
+        {/* Decorative */}
+        <div className="absolute inset-0 opacity-5 pointer-events-none"
+          style={{ backgroundImage: "repeating-linear-gradient(45deg, #f97316 0, #f97316 1px, transparent 0, transparent 50%)", backgroundSize: "20px 20px" }} />
 
-        <div className="max-w-[860px] mx-auto px-6 relative z-10">
-          <div className="flex justify-between items-start mb-8">
+        <div className="max-w-lg mx-auto px-4 relative z-10">
+          <div className="flex justify-between items-start mb-6">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2.5 rounded-2xl shadow-lg">
-                  <Wallet size={24} className="text-white" strokeWidth={2.5} />
+              <div className="flex items-center gap-2.5 mb-1">
+                <div className="bg-[#f97316] w-9 h-9 rounded-xl flex items-center justify-center shadow-md shadow-orange-900/40">
+                  <Wallet size={18} className="text-white" strokeWidth={2.5} />
                 </div>
-                <h1 className="text-3xl font-black text-white tracking-tight">Chia & Trả</h1>
+                <h1 className={`text-2xl font-black text-[#fef3e2] tracking-tight ${display.className}`}>Chia & Trả</h1>
               </div>
-              <p className="text-indigo-100/80 font-semibold text-sm">Quản lý tài chính nhóm thông minh</p>
+              <p className="text-[#a8865a] text-xs font-semibold pl-11">Quản lý chi tiêu nhóm</p>
             </div>
 
             <div className="flex gap-2">
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setDark((d: boolean) => !d)}
-                className="bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md text-white rounded-xl w-10 h-10 flex items-center justify-center transition-colors shadow-lg">
-                {dark ? <Sun size={18} strokeWidth={2.5} /> : <Moon size={18} strokeWidth={2.5} />}
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setDark((d: boolean) => !d)}
+                aria-label={dark ? "Chế độ sáng" : "Chế độ tối"}
+                className={`w-9 h-9 rounded-xl border-2 flex items-center justify-center transition-colors ${dark ? 'border-[#3d2b1a] bg-[#221a0e] text-[#a8865a] hover:border-[#f97316]' : 'border-white/20 bg-white/10 text-white hover:bg-white/20'}`}>
+                {dark ? <Sun size={16} strokeWidth={2.5} /> : <Moon size={16} strokeWidth={2.5} />}
               </motion.button>
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setResetOpen(true)}
-                className="bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md text-white rounded-xl w-10 h-10 flex items-center justify-center transition-colors shadow-lg">
-                <RotateCcw size={18} strokeWidth={2.5} />
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setResetOpen(true)}
+                aria-label="Làm mới"
+                className={`w-9 h-9 rounded-xl border-2 flex items-center justify-center transition-colors ${dark ? 'border-[#3d2b1a] bg-[#221a0e] text-[#a8865a] hover:border-rose-600' : 'border-white/20 bg-white/10 text-white hover:bg-white/20'}`}>
+                <RotateCcw size={16} strokeWidth={2.5} />
               </motion.button>
             </div>
           </div>
+
           <StatCards members={members} expenses={expenses} dark={dark} />
         </div>
       </div>
 
-      {/* Main Content Layout */}
-      <div className="max-w-[860px] mx-auto px-6 py-8 -mt-6 relative z-20 flex flex-col gap-6">
-        
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 30 }}>
-          <Card title="Thành viên nhóm" icon={<Users size={20} strokeWidth={2.5} />} dark={dark} accentClass="text-indigo-500 bg-indigo-500/10">
+      {/* Content */}
+      <div className="max-w-lg mx-auto px-4 -mt-6 pb-12 flex flex-col gap-4 relative z-20">
+
+        {/* Members Card */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
+          <Card dark={dark}>
+            <SectionTitle icon={<Users size={16} />} title="Thành viên nhóm" dark={dark} />
             <MemberList members={members} onAdd={addMember} onRemove={removeMember} onEdit={editMember} dark={dark} />
           </Card>
         </motion.div>
 
+        {/* Add Expense Card */}
         <AnimatePresence>
           {members.length > 0 && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-              <Card title="Thêm khoản chi" icon={<Plus size={20} strokeWidth={2.5} />} dark={dark} accentClass="text-violet-500 bg-violet-500/10">
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+              <Card dark={dark}>
+                <SectionTitle icon={<Plus size={16} />} title="Thêm khoản chi" dark={dark} />
                 <AddExpenseForm members={members} onAdd={addExpense} dark={dark} />
               </Card>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="pt-2">
-          {/* iOS-style Tab Switcher */}
-          <div className={`flex gap-1 p-1.5 rounded-[18px] mb-5 border shadow-sm ${dark ? 'bg-slate-900 border-slate-800' : 'bg-slate-200/50 border-slate-200/50'}`}>
+        {/* Tabs + Content */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
+          {/* Tab switcher */}
+          <div className={`flex gap-1 p-1 rounded-2xl mb-4 border-2 ${t.tab}`}>
             {[
-              { key: "expenses", label: `Giao dịch (${expenses.length})`, icon: <ReceiptText size={16} strokeWidth={2.5} /> },
-              { key: "settle", label: "Phương án chốt", icon: <Banknote size={16} strokeWidth={2.5} /> },
-            ].map(t => (
-              <button key={t.key} onClick={() => setTab(t.key)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all duration-300
-                  ${tab === t.key 
-                    ? (dark ? 'bg-slate-800 text-indigo-400 shadow-md' : 'bg-white text-indigo-600 shadow-md') 
-                    : (dark ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700')}`}
-              >
-                {t.icon} {t.label}
+              { key: "expenses", label: `Giao dịch (${expenses.length})`, icon: <ReceiptText size={14} strokeWidth={2.5} /> },
+              { key: "settle", label: "Phương án chốt", icon: <Banknote size={14} strokeWidth={2.5} /> },
+            ].map(tb => (
+              <button key={tb.key} onClick={() => setTab(tb.key)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200
+                  ${tab === tb.key ? t.tabActive : t.tabInactive}`}>
+                {tb.icon} {tb.label}
               </button>
             ))}
           </div>
 
           <AnimatePresence mode="wait">
             {tab === "expenses" ? (
-              <motion.div key="expenses" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
-                <Card title="Lịch sử giao dịch" icon={<ReceiptText size={20} strokeWidth={2.5} />} dark={dark} accentClass="text-pink-500 bg-pink-500/10">
+              <motion.div key="expenses" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
+                <Card dark={dark}>
+                  <SectionTitle icon={<ReceiptText size={16} />} title="Lịch sử giao dịch" dark={dark} />
                   <ExpenseList expenses={expenses} members={members} onDelete={delExpense} dark={dark} />
                 </Card>
               </motion.div>
             ) : (
-              <motion.div key="settle" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
-                <Card title="Phương án thanh toán tối ưu" icon={<Sparkles size={20} strokeWidth={2.5} />} dark={dark} accentClass="text-emerald-500 bg-emerald-500/10">
+              <motion.div key="settle" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
+                <Card dark={dark}>
+                  <SectionTitle icon={<Sparkles size={16} />} title="Phương án thanh toán tối ưu" dark={dark} />
                   <Settlement members={members} expenses={expenses} dark={dark} />
                 </Card>
               </motion.div>
@@ -723,7 +861,9 @@ const API_URL = "http://192.168.0.103:8080/api";
         </motion.div>
       </div>
 
-      <ConfirmModal open={resetOpen} onClose={() => setResetOpen(false)} onConfirm={resetAll} title="Làm mới toàn bộ" dark={dark} message="Hành động này sẽ xóa hết toàn bộ thành viên và khoản chi đang có. Bạn có chắc chắn không?" />
+      <ConfirmModal open={resetOpen} onClose={() => setResetOpen(false)} onConfirm={resetAll}
+        title="Làm mới toàn bộ" dark={dark}
+        message="Hành động này sẽ xóa hết thành viên và khoản chi. Bạn có chắc không?" />
     </div>
   );
 }
