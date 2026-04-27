@@ -138,7 +138,9 @@ export default function LoginPage() {
           </button>
 
           <p className="text-center text-sm font-semibold text-slate-400 mt-8">
-            Chưa có tài khoản? <a href="#" className="text-indigo-600 hover:underline">Sign up</a>
+            Chưa có tài khoản?<p className="text-center text-sm font-semibold text-slate-400 mt-8">
+  Chưa có tài khoản? <span onClick={() => window.location.href='/signup'} className="text-indigo-600 hover:underline cursor-pointer">Sign up ngay</span>
+</p>
           </p>
         </div>
 

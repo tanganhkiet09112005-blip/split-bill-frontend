@@ -244,7 +244,10 @@ export default function SplitBillApp() {
   const [tab, setTab] = useState("expenses");
   const [resetOpen, setResetOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [isAuth, setIsAuth] = useState(false); // Thêm state để kiểm tra login
+  const [isAuth, setIsAuth] = useState(false);
+
+  // ─── TÍCH HỢP 1: State lưu tên Sếp ─────────────────────────────────────────
+  const [userName, setUserName] = useState("Sếp");
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
@@ -252,11 +255,14 @@ export default function SplitBillApp() {
   useEffect(() => {
     setIsMounted(true);
     
-    const user = localStorage.getItem("user_session");
-    if (!user) {
+    const session = localStorage.getItem("user_session");
+    if (!session) {
       window.location.href = "/login";
     } else {
-      setIsAuth(true); // Đã có session thì mới cho phép render giao diện
+      setIsAuth(true);
+      // ─── TÍCH HỢP 2: Lấy tên từ session ngay khi khởi tạo ──────────────
+      const userData = JSON.parse(session);
+      setUserName(userData.fullName || "Sếp");
     }
 
     if (typeof window !== "undefined") {
@@ -333,13 +339,11 @@ export default function SplitBillApp() {
     } catch { toast.error("Lỗi Reset!", { id: loadingToast }); }
   }, [groupId, API_URL]);
 
-  // Hàm Đăng xuất
   const handleLogout = () => {
     localStorage.removeItem("user_session");
     window.location.href = "/login";
   };
 
-  // Màn hình chờ (Loader) khi đang check auth
   if (!isMounted || !groupId || !isAuth) {
     return <div className={`min-h-screen flex flex-col items-center justify-center bg-slate-50 text-indigo-600 ${sans.className}`}><Loader2 size={36} className="animate-spin mb-4" /><p className="font-medium">Đang kiểm tra bảo mật...</p></div>;
   }
@@ -353,8 +357,11 @@ export default function SplitBillApp() {
         <div className="max-w-xl mx-auto px-5">
           <div className="flex justify-between items-start mb-2">
             <div>
+              {/* ─── TÍCH HỢP 3: Chỉnh sửa Header hiển thị tên Sếp ───────────── */}
               <h1 className="text-2xl font-extrabold tracking-tight mb-1">PAYSHARE</h1>
-              <p className="text-xs text-indigo-200 font-medium tracking-wide">ID NHÓM: <span className="text-white bg-white/10 px-1.5 py-0.5 rounded ml-1">{groupId}</span></p>
+              <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider">Chào mừng trở lại, {userName}!</p>
+              
+              <p className="text-xs text-indigo-100 font-medium tracking-wide mt-2">ID NHÓM: <span className="text-white bg-white/10 px-1.5 py-0.5 rounded ml-1">{groupId}</span></p>
             </div>
             <div className="flex gap-2">
               <button onClick={handleLogout} className="p-2 bg-white/10 rounded-lg transition-colors hover:bg-rose-500" title="Đăng xuất"><LogOut size={16} /></button>
