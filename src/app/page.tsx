@@ -100,7 +100,7 @@ const Av = memo(({ name, size = 36 }: { name: string, size?: number }) => {
     { bg: "#ede9fe", text: "#7c3aed" }, { bg: "#fce7f3", text: "#be185d" },
     { bg: "#ccfbf1", text: "#0f766e" }, { bg: "#fff7ed", text: "#c2410c" },
   ];
-  const safeName = name || "?"; // Fix lỗi sập nếu name chưa load kịp
+  const safeName = name || "?";
   const c = colors[safeName.length % colors.length];
   return (
     <div className="flex items-center justify-center rounded-full flex-shrink-0 font-bold"
@@ -275,6 +275,7 @@ const MemberList = memo(({ members, onAdd, onRemove, onEdit, dark }: any) => {
 });
 MemberList.displayName = "MemberList";
 
+// ─── ĐÃ NÂNG CẤP: Nút Chọn Tất Cả ─────────────────────────────────────────────
 const AddExpenseForm = memo(({ members, onAdd, dark }: any) => {
   const t = dark ? tokens.dark : tokens.light;
   const [title, setTitle] = useState("");
@@ -284,10 +285,19 @@ const AddExpenseForm = memo(({ members, onAdd, dark }: any) => {
 
   const toggleSplit = (id: string) => setSplit(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   
+  // Logic Chọn tất cả / Bỏ chọn tất cả
+  const handleSelectAll = () => {
+    if (split.length === members.length) {
+      setSplit([]); // Nếu đã chọn hết -> Bỏ chọn
+    } else {
+      setSplit(members.map((m: any) => m.id)); // Chọn tất cả mọi người
+    }
+  };
+  
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseAmt(amount);
-    if (!title || !parsed || !payer || !split.length) return toast.error("Điền đủ thông tin!");
+    if (!title || !parsed || !payer || !split.length) return toast.error("Điền đủ thông tin Sếp nhé!");
     onAdd({ title, amount: parsed, paidBy: payer, splitBetween: split });
     setTitle(""); setAmount(""); setSplit([]);
   };
@@ -297,8 +307,8 @@ const AddExpenseForm = memo(({ members, onAdd, dark }: any) => {
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row">
-        <input placeholder="Mục chi tiêu…" value={title} onChange={e => setTitle(e.target.value)} className={`flex-1 rounded-xl px-4 h-12 border-2 ${t.input}`} />
-        <input placeholder="Số tiền…" value={amount} onChange={e => setAmount(fmtInput(e.target.value))} className={`sm:w-40 rounded-xl px-4 h-12 border-2 text-right font-bold text-[#f97316] ${t.input}`} />
+        <input placeholder="Mục chi tiêu (VD: Tiền lẩu)..." value={title} onChange={e => setTitle(e.target.value)} className={`flex-1 rounded-xl px-4 h-12 border-2 ${t.input}`} />
+        <input placeholder="Số tiền..." value={amount} onChange={e => setAmount(fmtInput(e.target.value))} className={`sm:w-40 rounded-xl px-4 h-12 border-2 text-right font-bold text-[#f97316] ${t.input}`} />
       </div>
       <div className={`p-4 rounded-xl border-2 ${t.card}`}>
         <p className="text-[10px] font-bold uppercase mb-2 text-[#9c7d5e]">Người trả tiền</p>
@@ -307,35 +317,61 @@ const AddExpenseForm = memo(({ members, onAdd, dark }: any) => {
             <button key={m.id} type="button" onClick={() => setPayer(m.id)} className={`px-3 py-1.5 rounded-full border-2 text-xs font-bold transition-colors ${payer === m.id ? t.pillActive : t.pill}`}>{m.name}</button>
           ))}
         </div>
-        <p className="text-[10px] font-bold uppercase mb-2 text-[#9c7d5e]">Chia cho ai</p>
+        
+        {/* Nút Chọn Tất Cả */}
+        <div className="flex justify-between items-center mb-2">
+          <p className="text-[10px] font-bold uppercase text-[#9c7d5e]">Chia cho ai</p>
+          <button type="button" onClick={handleSelectAll} className="text-[10px] font-bold text-[#f97316] bg-[#f97316]/10 px-2 py-1 rounded-md hover:bg-[#f97316]/20 transition-colors">
+            {split.length === members.length ? "Bỏ chọn tất cả" : "✓ Chọn tất cả"}
+          </button>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           {members.map((m: any) => (
             <button key={m.id} type="button" onClick={() => toggleSplit(m.id)} className={`px-3 py-1.5 rounded-full border-2 text-xs font-bold transition-colors ${split.includes(m.id) ? 'bg-emerald-500 text-white border-emerald-500' : t.pill}`}>{m.name}</button>
           ))}
         </div>
-        {perHead > 0 && <p className="mt-3 text-center text-xs font-bold text-[#f97316]">Mỗi người: {fmtVND(perHead)}</p>}
+        
+        {perHead > 0 && (
+          <div className="mt-4 p-2 bg-[#f97316]/10 rounded-lg text-center">
+            <p className="text-xs font-bold text-[#f97316]">Mỗi người chịu: {fmtVND(perHead)}</p>
+          </div>
+        )}
       </div>
-      <button type="submit" className="h-12 bg-[#f97316] hover:bg-[#ea6c0a] transition-colors text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg"><Plus size={16} /> Thêm Khoản Chi</button>
+      <button type="submit" className="h-12 bg-[#f97316] hover:bg-[#ea6c0a] transition-colors text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg"><Check size={18} /> Thêm Khoản Chi</button>
     </form>
   );
 });
 AddExpenseForm.displayName = "AddExpenseForm";
 
+// ─── ĐÃ NÂNG CẤP: Nút Xóa Bill Hiện Đại ───────────────────────────────────────
 const ExpenseList = memo(({ expenses, members, onDelete, dark }: any) => {
   const t = dark ? tokens.dark : tokens.light;
   const getName = (id: string) => members.find((m: any) => m.id === id)?.name || "?";
+  
   if (!expenses.length) return <EmptySlate icon={<ReceiptText size={28} />} title="Trống trơn" sub="Chưa có giao dịch" dark={dark} />;
+  
   return (
     <div className="flex flex-col gap-2.5">
       {[...expenses].reverse().map((exp: any) => (
-        <div key={exp.id} className={`group flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-colors ${t.card}`}>
+        <div key={exp.id} className={`group flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-colors ${t.card} hover:border-[#f97316]/30`}>
           <div className="flex-1">
             <p className={`font-bold text-sm ${t.text}`}>{exp.title}</p>
             <p className="text-[10px] text-[#9c7d5e]">{getName(exp.paidBy)} trả • {timeAgo(exp.createdAt)}</p>
           </div>
-          <div className="text-right">
+          <div className="flex items-center gap-3">
             <p className="font-black text-[#f97316] text-sm">{fmtVND(exp.amount)}</p>
-            <button onClick={() => onDelete(exp.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-rose-500 mt-1"><Trash2 size={13} /></button>
+            {/* Nút xóa luôn hiện, có popup xác nhận an toàn */}
+            <button 
+              onClick={() => {
+                if (window.confirm(`Xóa khoản chi "${exp.title}"?`)) {
+                  onDelete(exp.id);
+                }
+              }} 
+              className="p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         </div>
       ))}
@@ -393,7 +429,7 @@ export default function SplitBillApp() {
   }, []);
 
   // Fetch Data
-useEffect(() => {
+  useEffect(() => {
     if (!groupId || !isMounted) return;
     const loadData = async () => {
       try {
@@ -479,14 +515,15 @@ useEffect(() => {
     } catch { toast.error("Lỗi Reset!", { id: loadingToast }); }
   }, [groupId, API_URL]);
 
-if (!isMounted || !groupId) {
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#faf7f2] text-[#f97316]">
-      <Loader2 size={32} className="animate-spin mb-4" />
-      <p className="font-bold">Đang tạo phòng riêng cho Sếp...</p>
-    </div>
-  );
-}
+  if (!isMounted || !groupId) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#faf7f2] text-[#f97316]">
+        <Loader2 size={32} className="animate-spin mb-4" />
+        <p className="font-bold">Đang tạo phòng riêng cho Sếp...</p>
+      </div>
+    );
+  }
+  
   const t = dark ? tokens.dark : tokens.light;
 
   return (
