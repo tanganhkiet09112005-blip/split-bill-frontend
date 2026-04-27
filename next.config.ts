@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  // Phải là 0.103 - IP Wifi thật của bạn
-  allowedDevOrigins: ['192.168.0.103', 'localhost:3000'],
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Thêm dòng này để cấp phép cho điện thoại/máy ảo của Sếp
+  allowedDevOrigins: ['192.168.56.1', 'localhost'],
 };
+
 
 export default nextConfig;
