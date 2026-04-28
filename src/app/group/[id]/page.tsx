@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 import {
   Users, Plus, Trash2, Check, X, ReceiptText, Pencil,
   ArrowRight, Moon, Sun, Loader2, ArrowLeft, PieChart as PieChartIcon, 
-  UserPlus, LayoutDashboard, FolderKanban, BarChart2, Bell, Search, LogOut, HelpCircle, User
+  UserPlus, LayoutDashboard, FolderKanban, BarChart2, Bell, Search, LogOut, HelpCircle, User, TrendingUp, DollarSign
 } from "lucide-react";
 import { useRouter, useParams } from "next/navigation";
 
@@ -59,7 +59,7 @@ export default function GroupDetailPage() {
   const [dark, setDark] = useLS("payshare_dark", false);
   const [tab, setTab] = useState("expenses");
   const [isMounted, setIsMounted] = useState(false);
-  const [userName, setUserName] = useState("Sếp");
+  const [userName, setUserName] = useState("Anh Kiệt");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -88,19 +88,19 @@ export default function GroupDetailPage() {
         setMembers(await mRes.json()); 
         setExpenses(await eRes.json()); 
         fetchSettlement(); 
+        fetchStats();
       }
     } catch {}
-  }, [groupId, isMounted, API_URL, fetchSettlement]);
+  }, [groupId, isMounted, API_URL, fetchSettlement, fetchStats]);
 
   useEffect(() => {
     setIsMounted(true);
     const session = localStorage.getItem("user");
-    if (session) { setUserName(JSON.parse(session).fullName || "Sếp"); }
+    if (session) { setUserName(JSON.parse(session).fullName || "Anh Kiệt"); }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // LOGIC GIỮ NGUYÊN HOÀN TOÀN
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemberName.trim()) return toast.error("Vui lòng nhập tên!");
@@ -128,11 +128,14 @@ export default function GroupDetailPage() {
     try {
       const res = await fetch(url, { method: method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(exp) });
       if (res.ok) { 
-        loadData(); 
-        toast.success(exp.id ? "Đã cập nhật!" : "Đã ghi nhận!"); 
+        await loadData(); 
+        toast.success(exp.id ? "Đã cập nhật!" : "🎉 Đã ghi nhận hóa đơn mới!"); 
         setEditingExpense(null);
+        setTab("expenses"); // Chuyển về tab lịch sử sau khi lưu
+        return true;
       }
-    } catch { toast.error("Lỗi mạng!"); }
+      return false;
+    } catch { toast.error("Lỗi mạng!"); return false; }
   };
 
   const delExpense = async (id: string) => {
@@ -142,6 +145,8 @@ export default function GroupDetailPage() {
 
   if (!isMounted) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" /></div>;
 
+  const totalGroupSpent = expenses.reduce((s, e) => s + e.amount, 0);
+
   return (
     <div className={`flex h-screen overflow-hidden ${t.bg}`}>
       <Toaster position="top-center" />
@@ -150,16 +155,17 @@ export default function GroupDetailPage() {
       <aside className={`w-64 hidden md:flex flex-col border-r ${dark ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-white'}`}>
         <div className="p-6">
           <h1 className="text-2xl font-black italic text-indigo-600 tracking-tighter cursor-pointer" onClick={() => router.push('/dashboard')}>PayShare</h1>
+          <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Smart Bill Splitter</p>
         </div>
         
         <nav className="flex-1 px-4 space-y-2 mt-4">
           <button onClick={() => router.push('/dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-colors text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800`}>
             <LayoutDashboard size={18} /> Dashboard
           </button>
-          <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-colors text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30`}>
+          <button onClick={() => setTab("expenses")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-colors ${tab === "expenses" ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
             <FolderKanban size={18} /> Chi tiết nhóm
           </button>
-          <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-colors text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800`}>
+          <button onClick={() => { setTab("stats"); fetchStats(); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-colors ${tab === "stats" ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
             <BarChart2 size={18} /> Phân tích
           </button>
           
@@ -201,10 +207,10 @@ export default function GroupDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button className="p-2 text-slate-400 hover:text-indigo-600 transition-colors relative">
-              <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white dark:border-slate-950"></span>
-            </button>
+            <div className="text-right hidden sm:block">
+              <p className={`text-xs font-black ${t.text}`}>{userName}</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">IUH Analytics</p>
+            </div>
             <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black">
               {initials(userName)}
             </div>
@@ -216,22 +222,31 @@ export default function GroupDetailPage() {
           
           <div className="mb-8">
             <h2 className={`text-2xl font-black mb-1 ${t.text}`}>Nhóm: {groupId}</h2>
-            <p className={`text-sm ${t.subText}`}>Chào mừng trở lại, {userName}. Dưới đây là thông tin chi tiết.</p>
+            <p className={`text-sm ${t.subText}`}>Dữ liệu được đồng bộ trực tiếp từ hệ thống.</p>
           </div>
 
-          {/* 3 THẺ THỐNG KÊ (Giống ảnh) */}
+          {/* 3 THẺ THỐNG KÊ (Insight Doanh Nghiệp) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
              <div className={`p-6 rounded-2xl border ${t.card}`}>
-               <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider mb-2">Đang nợ / Bị nợ (Chốt sổ)</p>
+               <div className="flex items-center gap-3 mb-2">
+                 <div className="p-2 bg-rose-100 text-rose-600 rounded-lg"><TrendingUp size={16}/></div>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Trạng thái nợ</p>
+               </div>
                <p className="text-2xl font-black text-rose-600">{serverDebts.length} Giao dịch</p>
              </div>
              <div className={`p-6 rounded-2xl border ${t.card}`}>
-               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Thành viên tham gia</p>
-               <p className={`text-2xl font-black ${t.text}`}>{members.length} Người</p>
+               <div className="flex items-center gap-3 mb-2">
+                 <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Users size={16}/></div>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Quy mô nhóm</p>
+               </div>
+               <p className={`text-2xl font-black ${t.text}`}>{members.length} Thành viên</p>
              </div>
              <div className={`p-6 rounded-2xl border ${t.card}`}>
-               <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-wider mb-2">Tổng chi phí nhóm</p>
-               <p className="text-2xl font-black text-indigo-600">{fmtVND(expenses.reduce((s, e) => s + e.amount, 0))}</p>
+               <div className="flex items-center gap-3 mb-2">
+                 <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><DollarSign size={16}/></div>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng ngân sách</p>
+               </div>
+               <p className="text-2xl font-black text-emerald-600">{fmtVND(totalGroupSpent)}</p>
              </div>
           </div>
 
@@ -280,7 +295,7 @@ export default function GroupDetailPage() {
               <div className={`flex p-1.5 rounded-xl border ${t.card} ${t.tab}`}>
                 <button onClick={() => setTab("expenses")} className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${tab === "expenses" ? t.tabActive : "text-slate-500"}`}>Lịch sử hoạt động</button>
                 <button onClick={() => { setTab("settle"); fetchSettlement(); }} className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${tab === "settle" ? t.tabActive : "text-slate-500"}`}>Chốt nợ</button>
-                <button onClick={() => { setTab("stats"); fetchStats(); }} className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${tab === "stats" ? t.tabActive : "text-slate-500"}`}>Biểu đồ</button>
+                <button onClick={() => { setTab("stats"); fetchStats(); }} className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${tab === "stats" ? t.tabActive : "text-slate-500"}`}>Phân tích</button>
               </div>
 
               {/* TAB CONTENT */}
@@ -336,11 +351,34 @@ export default function GroupDetailPage() {
                   )}
 
                   {tab === "stats" && (
-                      <div className={`p-6 rounded-2xl border ${t.card}`}>
-                        <div className="flex items-center gap-2 mb-6 text-indigo-600">
-                          <PieChartIcon size={20} /> <span className="text-sm font-black uppercase">Phân tích chi tiêu</span>
-                        </div>
-                        <StatDashboard data={stats} />
+                      <div className={`p-6 rounded-3xl border ${t.card}`}>
+                          <div className="flex items-center justify-between mb-8">
+                              <h3 className="font-black text-indigo-600 uppercase text-sm flex items-center gap-2"><PieChartIcon size={18}/> Biểu đồ đóng góp chi phí</h3>
+                              <div className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black italic">IUH Analytics Mode</div>
+                          </div>
+                          
+                          {stats.length === 0 ? <p className="text-center py-10 italic text-slate-400">Đang tính toán số liệu...</p> : (
+                              <div className="space-y-6">
+                                  {stats.map((s, i) => (
+                                      <div key={i}>
+                                          <div className="flex justify-between text-xs font-bold mb-2">
+                                              <span className={t.text}>{s.memberName}</span>
+                                              <span className="text-indigo-600">{fmtVND(s.totalSpent)} ({Math.round((s.totalSpent / (totalGroupSpent || 1)) * 100)}%)</span>
+                                          </div>
+                                          <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                              <motion.div 
+                                                  initial={{ width: 0 }} 
+                                                  animate={{ width: `${(s.totalSpent / (totalGroupSpent || 1)) * 100}%` }}
+                                                  className="h-full bg-indigo-600 rounded-full"
+                                              />
+                                          </div>
+                                      </div>
+                                  ))}
+                                  <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+                                      <p className="text-[11px] text-slate-400 font-medium italic">"Phân tích này giúp điều phối dòng tiền công bằng hơn trong nhóm."</p>
+                                  </div>
+                              </div>
+                          )}
                       </div>
                   )}
                 </motion.div>
@@ -373,12 +411,13 @@ export default function GroupDetailPage() {
   );
 }
 
-// ─── COMPONENT: FORM HÓA ĐƠN (CHỌN TẤT CẢ & SỬA) ──────────────────────────────
+// ─── COMPONENT: FORM HÓA ĐƠN (ENTERPRISE LOGIC) ──────────────────────────────
 function AddExpenseForm({ members, onSave, groupId, editData, onCancel }: any) {
   const [desc, setDesc] = useState(""); 
   const [amount, setAmount] = useState(""); 
   const [payer, setPayer] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (editData) {
@@ -402,11 +441,12 @@ function AddExpenseForm({ members, onSave, groupId, editData, onCancel }: any) {
     else setSelectedIds([...selectedIds, id]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); 
-    if(!desc || !amount || !payer || selectedIds.length === 0) return toast.error("Nhập đủ thông tin & chọn người chia nha Sếp!");
+    if(!desc || !amount || !payer || selectedIds.length === 0) return toast.error("Nhập đủ thông tin nha Sếp!");
     
-    onSave({ 
+    setIsSubmitting(true);
+    const success = await onSave({ 
       id: editData?.id, 
       description: desc, 
       amount: parseAmt(amount), 
@@ -416,14 +456,21 @@ function AddExpenseForm({ members, onSave, groupId, editData, onCancel }: any) {
       splitBetween: selectedIds,
       createdAt: editData?.createdAt || Date.now()
     });
+    setIsSubmitting(false);
+
+    // Form tự động reset nếu lưu thành công
+    if (success && !editData) {
+      setDesc("");
+      setAmount("");
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <input placeholder="Hôm nay chi việc gì?" value={desc} onChange={e => setDesc(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-slate-700 dark:text-slate-200" />
+      <input placeholder="Hôm nay chi việc gì?" value={desc} onChange={e => setDesc(e.target.value)} disabled={isSubmitting} className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-slate-700 dark:text-slate-200 transition-colors" />
       <div className="flex flex-col sm:flex-row gap-4">
-        <input placeholder="Số tiền" value={amount} onChange={e => setAmount(fmtInput(e.target.value))} className="w-full sm:w-1/2 p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-black text-indigo-600 text-lg" />
-        <select value={payer} onChange={e => setPayer(e.target.value)} className="w-full sm:w-1/2 p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+        <input placeholder="Số tiền" value={amount} onChange={e => setAmount(fmtInput(e.target.value))} disabled={isSubmitting} className="w-full sm:w-1/2 p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-black text-indigo-600 text-lg transition-colors" />
+        <select value={payer} onChange={e => setPayer(e.target.value)} disabled={isSubmitting} className="w-full sm:w-1/2 p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-slate-600 dark:text-slate-300 cursor-pointer transition-colors">
           <option value="" disabled>Ai là người ứng tiền?</option>
           {members.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
@@ -432,13 +479,13 @@ function AddExpenseForm({ members, onSave, groupId, editData, onCancel }: any) {
       <div className="space-y-3 mt-2">
         <div className="flex justify-between items-center">
           <p className="text-xs font-black uppercase text-slate-400">Tham gia chia tiền ({selectedIds.length})</p>
-          <button type="button" onClick={toggleAll} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
+          <button type="button" onClick={toggleAll} disabled={isSubmitting} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
             {selectedIds.length === members.length ? "Bỏ chọn hết" : "Chọn tất cả"}
           </button>
         </div>
         <div className="flex flex-wrap gap-2.5">
           {members.map((m: any) => (
-            <button key={m.userId} type="button" onClick={() => toggleUser(m.userId)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${selectedIds.includes(m.userId) ? 'bg-indigo-500 border-indigo-500 text-white shadow-md shadow-indigo-200 dark:shadow-none' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300'}`}>
+            <button key={m.userId} type="button" disabled={isSubmitting} onClick={() => toggleUser(m.userId)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${selectedIds.includes(m.userId) ? 'bg-indigo-500 border-indigo-500 text-white shadow-md shadow-indigo-200 dark:shadow-none' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300'} ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}>
               {m.name}
             </button>
           ))}
@@ -447,10 +494,11 @@ function AddExpenseForm({ members, onSave, groupId, editData, onCancel }: any) {
 
       <div className="flex items-center gap-3 mt-4">
         {editData && (
-          <button type="button" onClick={onCancel} className="flex-1 h-14 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 rounded-xl font-black text-sm uppercase transition-colors">Hủy sửa</button>
+          <button type="button" onClick={onCancel} disabled={isSubmitting} className="flex-1 h-14 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 rounded-xl font-black text-sm uppercase transition-colors">Hủy sửa</button>
         )}
-        <button type="submit" className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white h-14 rounded-xl font-black text-sm uppercase shadow-lg shadow-indigo-200 dark:shadow-none flex items-center justify-center gap-2 transition-colors">
-          <Check size={18} strokeWidth={4} /> {editData ? "CẬP NHẬT THAY ĐỔI" : "GHI NHẬN HÓA ĐƠN"}
+        <button type="submit" disabled={isSubmitting} className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white h-14 rounded-xl font-black text-sm uppercase shadow-lg shadow-indigo-200 dark:shadow-none flex items-center justify-center gap-2 transition-colors">
+          {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Check size={18} strokeWidth={4} />}
+          {isSubmitting ? "ĐANG XỬ LÝ..." : editData ? "CẬP NHẬT THAY ĐỔI" : "GHI NHẬN HÓA ĐƠN"}
         </button>
       </div>
     </form>
