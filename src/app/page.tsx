@@ -1,384 +1,249 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import toast, { Toaster } from "react-hot-toast";
-import {
-  Users, Plus, Trash2, Pencil, Check, X, ReceiptText,
-  ArrowRight, RotateCcw, Wallet, Moon, Sun,
-  CircleDollarSign, UserRound, Banknote, Sparkles,
-  TrendingUp, Loader2, Coffee, LogOut
-} from "lucide-react";
+import { useState, useEffect } from "react";
 import { Inter } from "next/font/google";
+import { Plus, Key, Users, LogOut, Loader2, ArrowRight, Wallet } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
+import { motion, AnimatePresence } from "framer-motion";
 
 const sans = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"] });
 
-// ─── Business Logic ────────────────────────────────────────────────────────
-function calculateOptimizedDebts(members: any[], expenses: any[]) {
-  const balance: Record<string, number> = {};
-  members.forEach((m) => (balance[m.id] = 0));
-  expenses.forEach((exp) => {
-    balance[exp.paidBy] = (balance[exp.paidBy] || 0) + exp.amount;
-    if (exp.splitType === 'CUSTOM' && exp.customSplits) {
-      Object.entries(exp.customSplits).forEach(([id, amt]: any) => {
-        balance[id] = (balance[id] || 0) - amt;
-      });
-    } else {
-      const splitCount = exp.splitBetween?.length || 1;
-      const share = exp.amount / splitCount;
-      exp.splitBetween?.forEach((id: string) => (balance[id] = (balance[id] || 0) - share));
-    }
-  });
-
-  const creditors: any[] = [], debtors: any[] = [];
-  Object.entries(balance).forEach(([id, bal]) => {
-    if (bal > 1) creditors.push({ id, amount: bal });
-    else if (bal < -1) debtors.push({ id, amount: -bal });
-  });
-  creditors.sort((a, b) => b.amount - a.amount);
-  debtors.sort((a, b) => b.amount - a.amount);
-  const debts = [];
-  let i = 0, j = 0;
-  while (i < creditors.length && j < debtors.length) {
-    const min = Math.min(creditors[i].amount, debtors[j].amount);
-    debts.push({ from: debtors[j].id, to: creditors[i].id, amount: Math.round(min) });
-    creditors[i].amount -= min;
-    debtors[j].amount -= min;
-    if (creditors[i].amount < 1) i++;
-    if (debtors[j].amount < 1) j++;
-  }
-  return debts;
-}
-
-// ─── Utils ───────────────────────────────────────────────────────────────────
-const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ";
-const fmtInput = (val: string) => {
-  const num = val.replace(/\D/g, "");
-  return num ? new Intl.NumberFormat("vi-VN").format(parseInt(num)) : "";
-};
-const parseAmt = (s: string) => parseInt(String(s).replace(/\D/g, "")) || 0;
-const initials = (n: string) => n ? n.trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?";
-const timeAgo = (ts: number) => {
-  if (!ts) return "Vừa xong";
-  const d = Date.now() - ts, m = Math.floor(d / 60000);
-  if (m < 1) return "Vừa xong";
-  if (m < 60) return `${m} phút trước`;
-  return `${Math.floor(m / 60)} giờ trước`;
-};
-
-function useLS<T>(key: string, init: T): [T, (val: T | ((prev: T) => T)) => void] {
-  const [v, set] = useState<T>(() => {
-    if (typeof window === "undefined") return init;
-    try { const x = window.localStorage.getItem(key); return x ? JSON.parse(x) : init; }
-    catch { return init; }
-  });
-  useEffect(() => { try { window.localStorage.setItem(key, JSON.stringify(v)); } catch { } }, [key, v]);
-  return [v, set];
-}
-
-const tokens = {
-  light: {
-    bg: "bg-slate-50", card: "bg-white border-slate-200 shadow-sm", text: "text-slate-900",
-    textMuted: "text-slate-500", textFaint: "text-slate-300", input: "bg-white border-slate-300 text-slate-900 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600",
-    pill: "bg-white border-slate-200 text-slate-600 hover:border-indigo-600 hover:text-indigo-600",
-    pillActive: "bg-indigo-600 border-indigo-600 text-white shadow-sm",
-    tab: "bg-slate-100/80 p-1 border-slate-200", tabActive: "bg-white text-indigo-700 shadow-sm rounded-md", tabInactive: "text-slate-500 hover:text-slate-800",
-    headerBg: "bg-indigo-600", confirmBtn: "border-slate-200 text-slate-600 hover:bg-slate-50", emptyBorder: "border-slate-200 bg-slate-50"
-  },
-  dark: {
-    bg: "bg-slate-950", card: "bg-slate-900 border-slate-800 shadow-sm", text: "text-white",
-    textMuted: "text-slate-400", textFaint: "text-slate-600", input: "bg-slate-950 border-slate-800 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500",
-    pill: "bg-slate-900 border-slate-800 text-slate-400 hover:border-indigo-500 hover:text-indigo-400",
-    pillActive: "bg-indigo-600 border-indigo-600 text-white shadow-sm",
-    tab: "bg-slate-900 p-1 border-slate-800", tabActive: "bg-slate-800 text-indigo-400 shadow-sm rounded-md", tabInactive: "text-slate-500 hover:text-slate-300",
-    headerBg: "bg-slate-950 border-b border-slate-800", confirmBtn: "border-slate-800 text-slate-400 hover:bg-slate-800", emptyBorder: "border-slate-800 bg-slate-900"
-  }
-};
-
-// ─── Base UI Components ───────────────────────────────────────────────────────
-const Av = memo(({ name, size = 36 }: { name: string, size?: number }) => {
-  const colors = [{ bg: "#e0e7ff", text: "#4338ca" }, { bg: "#dbeafe", text: "#1d4ed8" }, { bg: "#cffafe", text: "#0f766e" }, { bg: "#f3e8ff", text: "#7e22ce" }, { bg: "#fae8ff", text: "#a21caf" }, { bg: "#e2e8f0", text: "#334155" }];
-  const safeName = name || "?";
-  const c = colors[safeName.length % colors.length];
-  return <div className="flex items-center justify-center rounded-full flex-shrink-0 font-bold" style={{ width: size, height: size, background: c.bg, color: c.text, fontSize: size * 0.38, letterSpacing: "-0.02em" }}>{initials(safeName)}</div>;
-});
-Av.displayName = "Av";
-
-function AnimNumber({ value }: { value: number }) {
-  const [disp, setDisp] = useState(value);
-  const prev = useRef(value);
-  useEffect(() => {
-    if (prev.current === value) return;
-    const start = prev.current, end = value, dur = 500, t0 = performance.now();
-    const tick = (now: number) => {
-      const p = Math.min((now - t0) / dur, 1);
-      const ease = 1 - Math.pow(1 - p, 3);
-      setDisp(Math.round(start + (end - start) * ease));
-      if (p < 1) requestAnimationFrame(tick);
-      else { setDisp(end); prev.current = end; }
-    };
-    requestAnimationFrame(tick);
-  }, [value]);
-  return <span>{fmtVND(disp)}</span>;
-}
-
-const Card = memo(({ children, dark, className = "" }: { children: React.ReactNode, dark: boolean, className?: string }) => {
-  const t = dark ? tokens.dark : tokens.light;
-  return <div className={`rounded-2xl border ${t.card} ${className}`}>{children}</div>;
-});
-Card.displayName = "Card";
-
-const SectionTitle = memo(({ icon, title, dark }: { icon: React.ReactNode, title: string, dark: boolean }) => {
-  const t = dark ? tokens.dark : tokens.light;
-  return <div className="flex items-center gap-2 mb-4"><div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg dark:bg-indigo-900/30 dark:text-indigo-400">{icon}</div><h2 className={`text-base font-bold tracking-tight ${t.text}`}>{title}</h2></div>;
-});
-SectionTitle.displayName = "SectionTitle";
-
-const Modal = memo(({ open, onClose, title, children, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  if (!open) return null;
-  return <div className="fixed inset-0 z-[1000] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4" onClick={onClose}><motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} onClick={e => e.stopPropagation()} className={`w-full max-w-sm rounded-2xl p-5 shadow-xl border ${t.card}`}><div className="flex justify-between items-center mb-4"><h3 className={`text-base font-bold ${t.text}`}>{title}</h3><button onClick={onClose} className={`p-1.5 rounded-full ${t.pill} border`}><X size={14} /></button></div>{children}</motion.div></div>;
-});
-Modal.displayName = "Modal";
-
-const ConfirmModal = memo(({ open, onClose, onConfirm, title, message, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  return <Modal open={open} onClose={onClose} title={title} dark={dark}><p className={`text-sm mb-6 ${t.textMuted}`}>{message}</p><div className="flex gap-3"><button onClick={onClose} className={`flex-1 py-2.5 rounded-xl border font-medium transition-colors ${t.confirmBtn}`}>Hủy</button><button onClick={() => { onConfirm(); onClose(); }} className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 transition-colors text-white font-medium shadow-sm">Xác nhận</button></div></Modal>;
-});
-ConfirmModal.displayName = "ConfirmModal";
-
-const EmptySlate = memo(({ icon, title, sub, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  return <div className={`text-center py-10 rounded-xl border border-dashed ${t.emptyBorder}`}><div className={`flex justify-center mb-3 ${t.textFaint}`}>{icon}</div><div className={`font-semibold text-sm mb-1 ${t.text}`}>{title}</div><div className={`text-xs ${t.textMuted}`}>{sub}</div></div>;
-});
-EmptySlate.displayName = "EmptySlate";
-
-const StatCards = memo(({ members, expenses, dark }: any) => {
-  const total = useMemo(() => expenses.reduce((s: number, e: any) => s + e.amount, 0), [expenses]);
-  const topSpender = useMemo(() => {
-    if (!members.length) return null;
-    const m: Record<string, number> = {}; members.forEach((x: any) => (m[x.id] = 0));
-    expenses.forEach((e: any) => (m[e.paidBy] = (m[e.paidBy] || 0) + e.amount));
-    const id = Object.entries(m).sort(([, a], [, b]) => (b as number) - (a as number))[0]?.[0];
-    return members.find((x: any) => x.id === id);
-  }, [members, expenses]);
-  return <div className="grid grid-cols-3 gap-3 mt-6">{[{ label: "Tổng chi", value: <AnimNumber value={total} />, icon: <CircleDollarSign size={14} /> }, { label: "Thành viên", value: members.length, icon: <UserRound size={14} /> }, { label: "Top chi", value: topSpender?.name?.split(" ").pop() || "—", icon: <TrendingUp size={14} /> }].map((s, i) => (<div key={s.label} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-3.5 shadow-sm"><div className="flex items-center gap-1.5 text-indigo-100 text-[10px] font-medium uppercase tracking-wider mb-1.5">{s.icon} {s.label}</div><div className="text-white font-bold text-sm truncate tracking-tight">{s.value}</div></div>))}</div>;
-});
-StatCards.displayName = "StatCards";
-
-const MemberList = memo(({ members, onAdd, onRemove, onEdit, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  const [name, setName] = useState("");
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [delTarget, setDelTarget] = useState<any>(null);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); if (!name.trim()) return; onAdd(name.trim()); setName(""); };
-  const commitEdit = (id: string) => { if (!editName.trim()) return; onEdit(id, editName.trim()); setEditId(null); };
-  return (
-    <div>
-      <form onSubmit={submit} className="flex gap-2 mb-5"><input value={name} onChange={e => setName(e.target.value)} placeholder="Tên thành viên…" className={`flex-1 rounded-xl px-4 h-12 outline-none border transition-all ${t.input}`} /><button type="submit" className="h-12 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm flex items-center gap-2 shadow-sm transition-colors"><Plus size={16} /> Thêm</button></form>
-      {members.length === 0 ? <EmptySlate icon={<Users size={28} />} title="Chưa có thành viên" sub="Nhập tên để bắt đầu" dark={dark} /> : (
-        <div className="flex flex-wrap gap-2.5">{members.map((m: any) => (<div key={m.id} className={`group flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border transition-all ${t.card} hover:border-indigo-300 hover:shadow-sm`}><Av name={m.name} size={30} />{editId === m.id ? (<div className="flex items-center gap-1"><input autoFocus value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === 'Enter' && commitEdit(m.id)} className={`w-24 px-2 py-0.5 text-xs font-medium rounded outline-none border ${t.input}`} /><button onClick={() => commitEdit(m.id)} className="p-1 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-full transition-colors"><Check size={12} /></button><button onClick={() => setEditId(null)} className="p-1 text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"><X size={12} /></button></div>) : (<><span className={`text-sm font-medium ${t.text}`}>{m.name}</span><div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1"><button onClick={() => { setEditId(m.id); setEditName(m.name); }} className={`p-1.5 rounded-full ${t.pill} border transition-colors`}><Pencil size={11} /></button><button onClick={() => setDelTarget(m)} className="p-1.5 rounded-full text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-100 transition-colors"><Trash2 size={11} /></button></div></>)}</div>))}</div>
-      )}
-      <ConfirmModal open={!!delTarget} onClose={() => setDelTarget(null)} onConfirm={() => onRemove(delTarget.id)} title="Xóa thành viên?" message={`Dữ liệu của ${delTarget?.name} sẽ bị xóa khỏi hệ thống.`} dark={dark} />
-    </div>
-  );
-});
-MemberList.displayName = "MemberList";
-
-const AddExpenseForm = memo(({ members, onAdd, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [payer, setPayer] = useState("");
-  const [splitMode, setSplitMode] = useState<"EQUAL" | "CUSTOM">("EQUAL");
-  const [split, setSplit] = useState<string[]>([]);
-  const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
-  const toggleSplit = (id: string) => setSplit(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
-  const handleSelectAll = () => setSplit(split.length === members.length ? [] : members.map((m: any) => m.id));
-  const parsedAmt = parseAmt(amount);
-  const totalCustom = Object.values(customSplits).reduce((s, v) => s + parseAmt(v), 0);
-  const remaining = parsedAmt - totalCustom;
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault(); if (!title || !parsedAmt || !payer) return toast.error("Vui lòng điền đủ thông tin!");
-    if (splitMode === "EQUAL" && !split.length) return toast.error("Chưa chọn người để chia!");
-    if (splitMode === "CUSTOM" && remaining !== 0) return toast.error(`Tổng chia chưa khớp! Đang lệch ${fmtVND(Math.abs(remaining))}`);
-    const customData: Record<string, number> = {}; if (splitMode === "CUSTOM") { Object.entries(customSplits).forEach(([id, val]) => { if (parseAmt(val) > 0) customData[id] = parseAmt(val); }); }
-    onAdd({ title, amount: parsedAmt, paidBy: payer, splitType: splitMode, splitBetween: splitMode === "EQUAL" ? split : [], customSplits: splitMode === "CUSTOM" ? customData : null });
-    setTitle(""); setAmount(""); setSplit([]); setCustomSplits({});
-  };
-  const perHead = split.length ? Math.round(parsedAmt / split.length) : 0;
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-5">
-      <div className="flex flex-col gap-3 sm:flex-row"><input placeholder="Mục chi tiêu (VD: Nhậu hải sản)..." value={title} onChange={e => setTitle(e.target.value)} className={`flex-1 rounded-xl px-4 h-12 border transition-all outline-none ${t.input}`} /><input placeholder="Tổng tiền..." value={amount} onChange={e => setAmount(fmtInput(e.target.value))} className={`sm:w-44 rounded-xl px-4 h-12 border outline-none text-right font-bold text-indigo-600 transition-all ${t.input}`} /></div>
-      <div className={`p-5 rounded-xl border ${t.card}`}><p className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${t.textMuted}`}>1. Người thanh toán</p><div className="flex flex-wrap gap-2 mb-6">{members.map((m: any) => (<button key={m.id} type="button" onClick={() => setPayer(m.id)} className={`px-3.5 py-1.5 rounded-full border text-xs font-medium transition-all ${payer === m.id ? t.pillActive : t.pill}`}>{m.name}</button>))}</div><p className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${t.textMuted}`}>2. Hình thức chia</p><div className="flex gap-2 mb-4 p-1 bg-slate-100 rounded-lg dark:bg-slate-800"><button type="button" onClick={() => setSplitMode("EQUAL")} className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${splitMode === "EQUAL" ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}>Chia Đều</button><button type="button" onClick={() => setSplitMode("CUSTOM")} className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${splitMode === "CUSTOM" ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}>Gõ Từng Người</button></div>{splitMode === "EQUAL" ? (<motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}><div className="flex justify-between items-center mb-3"><span className={`text-[11px] font-semibold uppercase tracking-wider ${t.textMuted}`}>Danh sách chia</span><button type="button" onClick={handleSelectAll} className="text-[11px] font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition-colors dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50">{split.length === members.length ? "Bỏ chọn tất cả" : "✓ Chọn tất cả"}</button></div><div className="flex flex-wrap gap-2">{members.map((m: any) => (<button key={m.id} type="button" onClick={() => toggleSplit(m.id)} className={`px-3.5 py-1.5 rounded-full border text-xs font-medium transition-all ${split.includes(m.id) ? 'bg-indigo-600 text-white border-indigo-600' : t.pill}`}>{m.name}</button>))}</div>{perHead > 0 && (<div className="mt-5 p-3 bg-indigo-50 rounded-xl text-center border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800"><p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">Mỗi người chịu: {fmtVND(perHead)}</p></div>)}</motion.div>) : (<motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2.5 mt-2"><div className="flex justify-between items-center mb-1 text-[11px] font-semibold uppercase tracking-wider"><span className={t.textMuted}>Nhập số tiền</span><span className={remaining === 0 ? "text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full" : remaining < 0 ? "text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full" : "text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full"}>{remaining === 0 ? "✓ Đã khớp" : `Còn dư: ${fmtVND(remaining)}`}</span></div>{members.map((m: any) => (<div key={m.id} className="flex items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 dark:bg-slate-800/50 dark:border-slate-700/50"><span className={`text-sm font-medium pl-2 truncate w-1/3 ${t.text}`}>{m.name}</span><input placeholder="0đ" value={customSplits[m.id] || ""} onChange={e => setCustomSplits(p => ({ ...p, [m.id]: fmtInput(e.target.value) }))} className="flex-1 max-w-[150px] text-right font-semibold text-indigo-600 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 dark:bg-slate-900 dark:border-slate-700" /></div>))}</motion.div>)}</div>
-      <button type="submit" className="h-12 bg-indigo-600 hover:bg-indigo-700 transition-colors text-white rounded-xl font-medium flex items-center justify-center gap-2 shadow-sm"><Check size={18} /> Ghi nhận khoản chi</button>
-    </form>
-  );
-});
-AddExpenseForm.displayName = "AddExpenseForm";
-
-const ExpenseList = memo(({ expenses, members, onDelete, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  const getName = (id: string) => members.find((m: any) => m.id === id)?.name || "Thành viên đã xóa";
-  if (!expenses.length) return <EmptySlate icon={<ReceiptText size={28} />} title="Chưa có giao dịch" sub="Các khoản chi sẽ hiển thị ở đây" dark={dark} />;
-  return <div className="flex flex-col gap-3">{[...expenses].reverse().map((exp: any) => (<div key={exp.id} className={`flex items-center gap-3 p-4 rounded-xl border transition-all ${t.card} hover:border-indigo-300 hover:shadow-sm`}><div className="flex-1"><p className={`font-semibold text-sm mb-1 ${t.text}`}>{exp.title}</p><div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500"><span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-700 dark:bg-slate-800 dark:text-slate-300">{getName(exp.paidBy)}</span><span>trả • {timeAgo(exp.createdAt)}</span></div></div><div className="flex items-center gap-4"><div className="text-right"><p className="font-bold text-indigo-600 text-[15px]">{fmtVND(exp.amount)}</p>{exp.splitType === 'CUSTOM' && <p className="text-[9px] font-medium text-indigo-400 uppercase mt-0.5 tracking-wider">Chia tùy chỉnh</p>}</div><button onClick={() => { if (window.confirm(`Xóa khoản chi "${exp.title}"?`)) onDelete(exp.id); }} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors border border-rose-100 dark:bg-rose-950/30 dark:border-rose-900"><Trash2 size={16} /></button></div></div>))}</div>;
-});
-ExpenseList.displayName = "ExpenseList";
-
-const Settlement = memo(({ members, expenses, dark }: any) => {
-  const t = dark ? tokens.dark : tokens.light;
-  const debts = useMemo(() => calculateOptimizedDebts(members, expenses), [members, expenses]);
-  const getName = (id: string) => members.find((m: any) => m.id === id)?.name || "Ai đó";
-  if (!debts.length) return <div className="text-center py-12"><p className="text-4xl mb-3">🎉</p><p className={`font-semibold ${t.text}`}>Không ai nợ ai!</p><p className={`text-xs mt-1 ${t.textMuted}`}>Tuyệt vời, các khoản nợ đã được thanh toán.</p></div>;
-  return <div className="flex flex-col gap-3">{debts.map((d: any, i: number) => (<div key={i} className={`flex items-center gap-3 p-4 rounded-xl border ${t.card}`}><div className="flex flex-col items-center w-16"><Av name={getName(d.from)} /><span className="text-[10px] font-medium mt-1.5 text-slate-600 truncate w-full text-center dark:text-slate-400">{getName(d.from)}</span></div><div className="flex-1 text-center px-2"><div className="bg-indigo-50 rounded-lg py-2 px-1 dark:bg-indigo-900/20 border border-indigo-100/50 dark:border-indigo-800/50"><p className="font-bold text-indigo-600 mb-1 text-sm">{fmtVND(d.amount)}</p><ArrowRight size={14} className="mx-auto text-indigo-400" /></div></div><div className="flex flex-col items-center w-16"><Av name={getName(d.to)} /><span className="text-[10px] font-medium mt-1.5 text-slate-600 truncate w-full text-center dark:text-slate-400">{getName(d.to)}</span></div></div>))}</div>;
-});
-Settlement.displayName = "Settlement";
-
-// ─── Main App ─────────────────────────────────────────────────────────────────
-export default function SplitBillApp() {
-  const [members, setMembers] = useState<any[]>([]);
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [groupId, setGroupId] = useState<string | null>(null);
-  const [dark, setDark] = useLS("payshare_dark", false);
-  const [tab, setTab] = useState("expenses");
-  const [resetOpen, setResetOpen] = useState(false);
+export default function LobbyPage() {
   const [isMounted, setIsMounted] = useState(false);
-  const [isAuth, setIsAuth] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // ─── TÍCH HỢP 1: State lưu tên Sếp ─────────────────────────────────────────
-  const [userName, setUserName] = useState("Sếp");
+  // Modal states
+  const [showCreate, setShowCreate] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
-  // 1. Khởi tạo & Kiểm tra Đăng nhập
   useEffect(() => {
     setIsMounted(true);
-    
     const session = localStorage.getItem("user_session");
     if (!session) {
       window.location.href = "/login";
     } else {
-      setIsAuth(true);
-      // ─── TÍCH HỢP 2: Lấy tên từ session ngay khi khởi tạo ──────────────
       const userData = JSON.parse(session);
-      setUserName(userData.fullName || "Sếp");
-    }
-
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      let g = params.get("g");
-      if (!g) {
-        g = Math.random().toString(36).substring(2, 9);
-        window.history.replaceState(null, "", `?g=${g}`);
+      setUser(userData);
+      if (userData.id) {
+        fetchGroups(userData.id);
       }
-      setGroupId(g);
     }
   }, []);
 
-  // Fetch Data
-  useEffect(() => {
-    if (!groupId || !isMounted || !isAuth) return;
-    const loadData = async () => {
-      try {
-        const [mRes, eRes] = await Promise.all([
-          fetch(`${API_URL}/members?groupId=${groupId}`),
-          fetch(`${API_URL}/expenses?groupId=${groupId}`)
-        ]);
-        if (!mRes.ok || !eRes.ok) throw new Error("API đang báo lỗi");
-        const m = await mRes.json();
-        const e = await eRes.json();
-        setMembers(Array.isArray(m) ? m : []);
-        setExpenses(Array.isArray(e) ? e : []);
-      } catch (err) { 
-        console.error("Lỗi:", err);
-        setMembers([]); setExpenses([]);
+  const fetchGroups = async (userId: string) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/groups/user/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setGroups(data);
       }
-    };
-    loadData();
-  }, [groupId, isMounted, isAuth, API_URL]);
+    } catch (err) {
+      console.error("Lỗi fetch groups:", err);
+      toast.error("Không thể kết nối Server Backend!");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const addMember = useCallback(async (name: string) => {
+  const handleCreateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGroupName.trim()) return;
+
+    const loadingToast = toast.loading("Đang tạo nhóm...");
     try {
-      const res = await fetch(`${API_URL}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, groupId }) });
-      const data = await res.json();
-      setMembers(p => [...p, data]); toast.success("Đã thêm thành viên!");
-    } catch { toast.error("Lỗi kết nối!"); }
-  }, [groupId, API_URL]);
+      const res = await fetch(`${API_URL}/groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newGroupName,
+          createdBy: user.id 
+        })
+      });
 
-  const editMember = useCallback((id: string, newName: string) => { setMembers(p => p.map(m => m.id === id ? { ...m, name: newName } : m)); toast.success("Đã lưu tên!"); }, []);
+      if (res.ok) {
+        const newGroup = await res.json();
+        toast.success(`Tạo nhóm "${newGroup.name}" thành công!`, { id: loadingToast });
+        setShowCreate(false);
+        setNewGroupName("");
+        fetchGroups(user.id); 
+      } else {
+        toast.error("Có lỗi xảy ra khi tạo nhóm", { id: loadingToast });
+      }
+    } catch (err) {
+      toast.error("Lỗi kết nối Server!", { id: loadingToast });
+    }
+  };
 
-  const addExpense = useCallback(async (exp: any) => {
+  const handleJoinGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+
+    const loadingToast = toast.loading("Đang kiểm tra mã nhóm...");
     try {
-      const res = await fetch(`${API_URL}/expenses`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...exp, groupId }) });
-      const data = await res.json();
-      setExpenses(p => [...p, data]); toast.success("Ghi nhận thành công!");
-    } catch { toast.error("Lỗi lưu hóa đơn!"); }
-  }, [groupId, API_URL]);
+      const res = await fetch(`${API_URL}/groups/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          joinCode: joinCode,
+          userId: user.id 
+        })
+      });
 
-  const removeMember = useCallback(async (id: string) => {
-    const loadingToast = toast.loading("Đang xóa...");
-    try {
-      await fetch(`${API_URL}/members/${id}`, { method: "DELETE" });
-      setMembers(p => p.filter(m => m.id !== id)); toast.success("Đã xóa!", { id: loadingToast });
-    } catch { toast.error("Lỗi xóa!", { id: loadingToast }); }
-  }, [API_URL]);
-
-  const delExpense = useCallback(async (id: string) => {
-    try {
-      await fetch(`${API_URL}/expenses/${id}`, { method: "DELETE" });
-      setExpenses(p => p.filter(e => e.id !== id)); toast.success("Đã xóa hóa đơn");
-    } catch { toast.error("Lỗi xóa!"); }
-  }, [API_URL]);
-
-  const resetAll = useCallback(async () => {
-    const loadingToast = toast.loading("Đang dọn dẹp...");
-    try {
-      await fetch(`${API_URL}/members/reset?groupId=${groupId}`, { method: "DELETE" });
-      setMembers([]); setExpenses([]); setResetOpen(false); toast.success("Đã làm mới nhóm!", { id: loadingToast });
-    } catch { toast.error("Lỗi Reset!", { id: loadingToast }); }
-  }, [groupId, API_URL]);
+      if (res.ok) {
+        const joinedGroup = await res.json();
+        toast.success(`Đã tham gia nhóm ${joinedGroup.name}!`, { id: loadingToast });
+        setShowJoin(false);
+        setJoinCode("");
+        fetchGroups(user.id); 
+      } else {
+        toast.error("Mã nhóm không đúng hoặc lỗi!", { id: loadingToast });
+      }
+    } catch (err) {
+      toast.error("Lỗi kết nối Server!", { id: loadingToast });
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("user_session");
     window.location.href = "/login";
   };
 
-  if (!isMounted || !groupId || !isAuth) {
-    return <div className={`min-h-screen flex flex-col items-center justify-center bg-slate-50 text-indigo-600 ${sans.className}`}><Loader2 size={36} className="animate-spin mb-4" /><p className="font-medium">Đang kiểm tra bảo mật...</p></div>;
-  }
-  
-  const t = dark ? tokens.dark : tokens.light;
+  if (!isMounted || !user) return <div className={`min-h-screen flex items-center justify-center bg-slate-50 text-indigo-600 ${sans.className}`}><Loader2 size={36} className="animate-spin" /></div>;
 
   return (
-    <div className={`${sans.className} min-h-screen ${t.bg} transition-colors duration-300`}>
-      <Toaster position="top-center" toastOptions={{ className: 'text-sm font-medium' }} />
-      <div className={`${t.headerBg} pb-16 pt-8 text-white relative shadow-inner`}>
-        <div className="max-w-xl mx-auto px-5">
-          <div className="flex justify-between items-start mb-2">
+    <div className={`min-h-screen bg-slate-50 ${sans.className}`}>
+      <Toaster position="top-center" />
+
+      {/* HEADER */}
+      <div className="bg-indigo-600 pb-20 pt-8 text-white shadow-md">
+        <div className="max-w-3xl mx-auto px-6">
+          <div className="flex justify-between items-center mb-8">
             <div>
-              {/* ─── TÍCH HỢP 3: Chỉnh sửa Header hiển thị tên Sếp ───────────── */}
-              <h1 className="text-2xl font-extrabold tracking-tight mb-1">PAYSHARE</h1>
-              <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider">Chào mừng trở lại, {userName}!</p>
-              
-              <p className="text-xs text-indigo-100 font-medium tracking-wide mt-2">ID NHÓM: <span className="text-white bg-white/10 px-1.5 py-0.5 rounded ml-1">{groupId}</span></p>
+              <h1 className="text-2xl font-black tracking-tight mb-1">PAYSHARE</h1>
+              <p className="text-xs text-indigo-200 font-medium tracking-wide">CHÀO MỪNG TRỞ LẠI</p>
             </div>
-            <div className="flex gap-2">
-              <button onClick={handleLogout} className="p-2 bg-white/10 rounded-lg transition-colors hover:bg-rose-500" title="Đăng xuất"><LogOut size={16} /></button>
-              <button onClick={() => setDark(!dark)} className="p-2 bg-white/10 rounded-lg transition-colors hover:bg-white/20">{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
-              <button onClick={() => setResetOpen(true)} className="p-2 bg-white/10 rounded-lg transition-colors hover:bg-rose-500"><RotateCcw size={16} /></button>
-            </div>
+            <button onClick={handleLogout} className="p-2.5 bg-white/10 hover:bg-rose-500 rounded-xl transition-all flex items-center gap-2 text-sm font-bold shadow-sm">
+              <LogOut size={16} /> Thoát
+            </button>
           </div>
-          <StatCards members={members} expenses={expenses} dark={dark} />
+
+          <div>
+            <h2 className="text-3xl font-extrabold mb-2">Xin chào, {user.fullName || "Sếp"}!</h2>
+            <p className="text-indigo-100 font-medium">Bạn muốn tính toán chi tiêu cho nhóm nào hôm nay?</p>
+          </div>
         </div>
       </div>
-      <div className="max-w-xl mx-auto px-5 -mt-8 pb-16 flex flex-col gap-5">
-        <Card dark={dark} className="shadow-md shadow-slate-200/50 dark:shadow-none"><SectionTitle icon={<Users size={16} strokeWidth={2.5} />} title="Quản lý thành viên" dark={dark} /><MemberList members={members} onAdd={addMember} onRemove={removeMember} onEdit={editMember} dark={dark} /></Card>
-        {members.length > 0 && (<Card dark={dark} className="shadow-md shadow-slate-200/50 dark:shadow-none"><SectionTitle icon={<Plus size={16} strokeWidth={2.5} />} title="Thêm khoản chi" dark={dark} /><AddExpenseForm members={members} onAdd={addExpense} dark={dark} /></Card>)}
-        <div className={`flex p-1.5 rounded-xl border ${t.tab}`}><button onClick={() => setTab("expenses")} className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${tab === "expenses" ? t.tabActive : t.tabInactive}`}>Lịch sử giao dịch</button><button onClick={() => setTab("settle")} className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${tab === "settle" ? t.tabActive : t.tabInactive}`}>Chốt nợ tối ưu</button></div>
-        <Card dark={dark} className="shadow-md shadow-slate-200/50 dark:shadow-none">{tab === "expenses" ? <ExpenseList expenses={expenses} members={members} onDelete={delExpense} dark={dark} /> : <Settlement members={members} expenses={expenses} dark={dark} />}</Card>
+
+      {/* MAIN LOBBY */}
+      <div className="max-w-3xl mx-auto px-6 -mt-10 pb-20">
+        
+        {/* Nút thao tác nhanh */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <button onClick={() => setShowCreate(true)} className="bg-white p-5 rounded-2xl shadow-lg shadow-indigo-100/50 border border-slate-100 hover:border-indigo-300 transition-all group text-left relative overflow-hidden">
+            <div className="bg-indigo-50 w-12 h-12 rounded-full flex items-center justify-center text-indigo-600 mb-4 group-hover:scale-110 transition-transform">
+              <Plus size={24} strokeWidth={2.5} />
+            </div>
+            <h3 className="font-bold text-slate-800 text-lg">Tạo nhóm mới</h3>
+            <p className="text-xs font-medium text-slate-500 mt-1">Lập quỹ chung cho chuyến đi</p>
+          </button>
+
+          <button onClick={() => setShowJoin(true)} className="bg-white p-5 rounded-2xl shadow-lg shadow-indigo-100/50 border border-slate-100 hover:border-indigo-300 transition-all group text-left relative overflow-hidden">
+            <div className="bg-emerald-50 w-12 h-12 rounded-full flex items-center justify-center text-emerald-600 mb-4 group-hover:scale-110 transition-transform">
+              <Key size={24} strokeWidth={2.5} />
+            </div>
+            <h3 className="font-bold text-slate-800 text-lg">Vào nhóm bằng mã</h3>
+            <p className="text-xs font-medium text-slate-500 mt-1">Nhập ID để tham gia tính tiền</p>
+          </button>
+        </div>
+
+        {/* Danh sách nhóm */}
+        <div>
+          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <Wallet size={18} className="text-indigo-600" /> Nhóm của bạn
+          </h3>
+          
+          {isLoading ? (
+            <div className="py-12 flex justify-center text-indigo-600"><Loader2 className="animate-spin" size={32} /></div>
+          ) : groups.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center">
+              <Users size={40} className="mx-auto text-slate-300 mb-3" />
+              <p className="font-bold text-slate-700">Chưa có nhóm nào</p>
+              <p className="text-sm font-medium text-slate-500 mt-1">Hãy tạo một nhóm mới để bắt đầu chia tiền nhé!</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {groups.map(group => (
+                <div 
+                  key={group.id} 
+                  onClick={() => window.location.href = `/group/${group.groupCode || group.id}`} 
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer flex items-center justify-between group/card"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-50 text-indigo-600 flex items-center justify-center font-black text-lg border border-indigo-100">
+                      {group.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 group-hover/card:text-indigo-600 transition-colors">{group.name}</h4>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                          <Key size={12} /> ID: <span className="uppercase text-indigo-600 bg-indigo-50 px-1.5 rounded-md">{group.groupCode}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <ArrowRight size={20} className="text-slate-300 group-hover/card:text-indigo-500 group-hover/card:translate-x-1 transition-all" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <ConfirmModal open={resetOpen} onClose={() => setResetOpen(false)} onConfirm={resetAll} title="Xóa toàn bộ dữ liệu?" message="Tất cả thành viên và hóa đơn của nhóm này sẽ bị xóa vĩnh viễn khỏi hệ thống." dark={dark} />
+
+      {/* MODAL TẠO NHÓM MỚI */}
+      <AnimatePresence>
+        {showCreate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-[2rem] w-full max-w-sm p-6 shadow-2xl">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Tạo nhóm mới</h3>
+              <p className="text-sm font-medium text-slate-500 mb-6">Đặt tên cho chuyến đi hoặc mục đích chi tiêu chung.</p>
+              <form onSubmit={handleCreateGroup}>
+                <input autoFocus type="text" placeholder="VD: Nhậu ăn mừng đồ án A+" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-xl px-4 font-semibold text-slate-800 outline-none focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10 transition-all mb-6" />
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setShowCreate(false)} className="flex-1 h-12 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition-colors">Hủy</button>
+                  <button type="submit" className="flex-1 h-12 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95">Tạo ngay</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL NHẬP MÃ NHÓM */}
+      <AnimatePresence>
+        {showJoin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-[2rem] w-full max-w-sm p-6 shadow-2xl">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Vào nhóm bằng mã</h3>
+              <p className="text-sm font-medium text-slate-500 mb-6">Hỏi bạn bè mã ID của nhóm để tham gia.</p>
+              <form onSubmit={handleJoinGroup}>
+                <input autoFocus type="text" placeholder="Nhập mã nhóm..." value={joinCode} onChange={e => setJoinCode(e.target.value)} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-center text-lg text-indigo-600 outline-none focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10 transition-all mb-6 uppercase" />
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setShowJoin(false)} className="flex-1 h-12 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition-colors">Hủy</button>
+                  <button type="submit" className="flex-1 h-12 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95">Tham gia</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
