@@ -1,22 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Inter } from "next/font/google";
 import { Loader2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import { GoogleLogin } from "@react-oauth/google"; // Dùng Component này để lấy ID Token dễ nhất
+import { GoogleLogin } from "@react-oauth/google";
 
 const sans = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"] });
 
 export default function LoginPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  // Tự động dùng URL của Render
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://split-bill-backend-5srl.onrender.com/api";
 
-  // --- 1. XỬ LÝ ĐĂNG NHẬP THÔNG THƯỜNG ---
+  // --- 1. XỬ LÝ ĐĂNG NHẬP BẰNG TÀI KHOẢN THƯỜNG ---
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -30,12 +33,13 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        const userData = await res.json();
+        const data = await res.json();
         if (typeof window !== "undefined") {
-          localStorage.setItem("user_session", JSON.stringify(userData));
+          localStorage.setItem("token", data.token); // Lưu token
+          localStorage.setItem("user", JSON.stringify(data)); // Đổi thành "user" cho khớp với Dashboard
         }
-        toast.success(`Chào mừng ${userData.fullName} trở lại!`);
-        setTimeout(() => { window.location.href = "/"; }, 1000);
+        toast.success(`Chào mừng Sếp ${data.fullName} trở lại!`);
+        setTimeout(() => { router.push("/dashboard"); }, 1000); // Chuyển về Dashboard
       } else {
         setError("Email hoặc mật khẩu không đúng!");
       }
@@ -46,28 +50,36 @@ export default function LoginPage() {
     }
   };
 
-  // --- 2. XỬ LÝ ĐĂNG NHẬP GOOGLE (GỬI ID TOKEN) ---
-  const handleGoogleSuccess = async (credentialResponse: any) => {
+  // --- 2. XỬ LÝ ĐĂNG NHẬP GOOGLE TÍCH HỢP CODE MỚI ---
+  const handleGoogleLogin = async (credentialResponse: any) => {
     setIsLoading(true);
+    const googleToken = credentialResponse.credential;
+    console.log("Token lấy từ Google:", googleToken); // Log ra để dễ debug
+
     try {
       const res = await fetch(`${API_URL}/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: credentialResponse.credential }) // credential chính là ID Token mà Java cần
+        body: JSON.stringify({ token: googleToken }),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
+        // Đăng nhập thành công -> Lưu dữ liệu và chuyển hướng
         if (typeof window !== "undefined") {
-          localStorage.setItem("user_session", JSON.stringify(data));
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data)); // Lưu đúng tên "user"
         }
-        toast.success("Đăng nhập Google thành công!");
-        setTimeout(() => { window.location.href = "/"; }, 1000);
+        toast.success(`Đăng nhập thành công! Chào mừng Sếp ${data.fullName}`);
+        setTimeout(() => { router.push("/dashboard"); }, 1000);
       } else {
-        toast.error("Lỗi xác thực tại Server Backend!");
+        toast.error("Lỗi từ Backend: " + data);
+        console.error("Chi tiết lỗi:", data);
       }
-    } catch (err) {
-      toast.error("Lỗi kết nối khi đăng nhập Google!");
+    } catch (error) {
+      console.error("Lỗi gọi API:", error);
+      toast.error("Không kết nối được với Server Backend!");
     } finally {
       setIsLoading(false);
     }
@@ -75,6 +87,7 @@ export default function LoginPage() {
 
   return (
     <div className={`min-h-screen bg-slate-50 flex items-center justify-center p-4 ${sans.className}`}>
+      {/* Toast để hiện thông báo đẹp */}
       <Toaster position="top-center" />
       <div className="w-full max-w-4xl bg-white rounded-[2rem] shadow-2xl flex flex-col md:flex-row overflow-hidden min-h-[550px] border border-slate-100">
         
@@ -109,11 +122,14 @@ export default function LoginPage() {
             <div className="h-px bg-slate-200 flex-1"></div>
           </div>
 
-          {/* SỬ DỤNG COMPONENT ĐỂ ĐẢM BẢO LẤY ĐÚNG ID_TOKEN CHO JAVA */}
+          {/* NÚT GOOGLE ĐÃ GẮN LOGIC MỚI */}
           <div className="flex justify-center">
             <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => toast.error("Đăng nhập Google thất bại!")}
+              onSuccess={handleGoogleLogin}
+              onError={() => {
+                console.log("Đăng nhập Google thất bại (User tắt popup hoặc lỗi mạng)");
+                toast.error("Đăng nhập Google bị hủy hoặc thất bại!");
+              }}
               useOneTap
               shape="pill"
               theme="outline"
@@ -121,11 +137,11 @@ export default function LoginPage() {
           </div>
 
           <p className="text-center text-sm font-semibold text-slate-400 mt-8">
-            Chưa có tài khoản? <span onClick={() => window.location.href='/signup'} className="text-indigo-600 hover:underline cursor-pointer">Sign up ngay</span>
+            Chưa có tài khoản? <span onClick={() => router.push('/signup')} className="text-indigo-600 hover:underline cursor-pointer">Sign up ngay</span>
           </p>
         </div>
 
-        {/* CỘT BÊN PHẢI GIỮ NGUYÊN */}
+        {/* CỘT BÊN PHẢI (BANNER) */}
         <div className="hidden md:flex md:w-1/2 bg-indigo-600 flex-col items-center justify-center p-12 text-center relative overflow-hidden">
           <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_50%_50%,_white_0%,_transparent_70%)]"></div>
           <h2 className="text-4xl lg:text-5xl font-black text-white leading-[1.1] relative z-10">
