@@ -1,34 +1,30 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "react-hot-toast";
+import GoogleAuthProvider from "@/components/GoogleAuthProvider"; // Anh em mình sẽ tạo file này
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Chia & Trả — Quản lý chi tiêu nhóm",
-  description: "Ứng dụng chia tiền nhóm thông minh, tối ưu phương án thanh toán",
+  title: "PAYSHARE - Smart Group Spending",
+  description: "Ứng dụng quản lý chi tiêu nhóm của Sếp Kiệt",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html
-      lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="vi">
+      <body className={inter.className}>
+        {/* 1. Bọc toàn bộ App bằng Google Provider */}
+        <GoogleAuthProvider>
+          {children}
+          <Toaster position="top-center" />
+        </GoogleAuthProvider>
+      </body>
     </html>
   );
 }
-
