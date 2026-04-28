@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback, memo, useRef } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { motion } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
 import dynamic from 'next/dynamic'; 
 import {
-  Users, Plus, Trash2, Pencil, Check, X, ReceiptText,
-  ArrowRight, RotateCcw, Moon, Sun,
-  CircleDollarSign, UserRound, TrendingUp, Loader2, ArrowLeft, MapPin, PieChart as PieChartIcon
+  Users, Plus, Trash2, Check, X, ReceiptText,
+  ArrowRight, Moon, Sun,
+  Loader2, ArrowLeft, MapPin, PieChart as PieChartIcon
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
-// ─── ĐỊNH NGHĨA KIỂU DỮ LIỆU ───────────────────────────────────────────────
-interface Member { id: string; name: string; groupId: string; }
+// ─── ĐỊNH NGHĨA KIỂU DỮ LIỆU (Đã fix khớp với Backend Spring Boot) ──────────
+interface Member { userId: string; name: string; groupId: string; }
 interface Expense {
-  id?: string; title: string; amount: number; paidBy: string;
+  id?: string; description: string; amount: number; paidBy: string; // Backend dùng description
   groupId: string; splitType: string; splitBetween?: string[]; customSplits?: Record<string, number> | null;
   latitude?: number | null; longitude?: number | null; createdAt?: number;
 }
@@ -74,6 +75,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
   const [stats, setStats] = useState<StatData[]>([]);
   const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   
+  const router = useRouter();
   const groupId = params.id; 
   const [dark, setDark] = useLS("payshare_dark", false);
   const [tab, setTab] = useState("expenses");
@@ -81,12 +83,12 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
   const [isAuth, setIsAuth] = useState(false);
   const [userName, setUserName] = useState("Sếp");
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://split-bill-backend-5srl.onrender.com/api";
 
   // FETCH NỢ
   const fetchSettlement = useCallback(async () => {
     if (!groupId) return;
-    try { const res = await fetch(`${API_URL}/members/${groupId}/settle`); if (res.ok) setServerDebts(await res.json()); } catch {}
+    try { const res = await fetch(`${API_URL}/members/debts/${groupId}`); if (res.ok) setServerDebts(await res.json()); } catch {}
   }, [groupId, API_URL]);
 
   // FETCH BIỂU ĐỒ
@@ -99,26 +101,29 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
   const loadData = useCallback(async () => {
     if (!groupId || !isMounted || !isAuth) return;
     try {
-      const [mRes, eRes] = await Promise.all([ fetch(`${API_URL}/members?groupId=${groupId}`), fetch(`${API_URL}/expenses?groupId=${groupId}`) ]);
+      const [mRes, eRes] = await Promise.all([ 
+          fetch(`${API_URL}/members/group/${groupId}`), // Đã sửa link
+          fetch(`${API_URL}/expenses/group/${groupId}`) // Đã sửa link
+      ]);
       if (mRes.ok && eRes.ok) { setMembers(await mRes.json()); setExpenses(await eRes.json()); fetchSettlement(); fetchStats(); }
     } catch {}
   }, [groupId, isMounted, isAuth, API_URL, fetchSettlement, fetchStats]);
 
   useEffect(() => {
     setIsMounted(true);
-    const session = localStorage.getItem("user_session");
-    if (!session) { window.location.href = "/login"; } else { setIsAuth(true); setUserName(JSON.parse(session).fullName || "Sếp Kiệt"); }
+    const session = localStorage.getItem("user"); // Đã sửa key
+    if (!session) { window.location.href = "/login"; } else { setIsAuth(true); setUserName(JSON.parse(session).fullName || "Sếp"); }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 🚀 HÀM NHẮC NỢ QUA EMAIL (MỚI TÍCH HỢP)
-  const remindMember = async (targetEmail: string, fromName: string, amount: number) => {
+  // 🚀 HÀM NHẮC NỢ QUA EMAIL
+  const remindMember = async (targetEmail: string, amount: number) => {
     try {
-      const res = await fetch(`${API_URL}/expenses/remind`, {
+      const res = await fetch(`${API_URL}/expenses/remind-debt`, { // Đã sửa link và payload
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: targetEmail, fromName, amount })
+        body: JSON.stringify({ email: targetEmail, groupName: groupId, amount: amount })
       });
       if (res.ok) {
         toast.success(`Đã bắn mail nhắc nợ tới ${targetEmail}!`);
@@ -131,9 +136,6 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
   };
 
   // HÀM XỬ LÝ KHÁC
-  const addMember = async (name: string) => {
-    try { const res = await fetch(`${API_URL}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, groupId }) }); if (res.ok) { loadData(); toast.success("Đã thêm thành viên!"); } } catch { toast.error("Lỗi!"); }
-  };
   const addExpense = async (exp: Expense) => {
     try { const res = await fetch(`${API_URL}/expenses`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exp) }); if (res.ok) { loadData(); toast.success("Ghi nhận khoản chi!"); } } catch { toast.error("Lỗi!"); }
   };
@@ -154,10 +156,10 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
         <div className="max-w-xl mx-auto">
           <div className="flex justify-between items-start mb-6"> 
             <div>
-              <div className="flex items-center gap-2 mb-1"><button onClick={() => window.location.href = "/"} className="p-1.5 bg-white/10 rounded-lg"><ArrowLeft size={16} /></button><h1 className="text-2xl font-black italic">PAYSHARE</h1></div>
+              <div className="flex items-center gap-2 mb-1"><button onClick={() => router.push("/dashboard")} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition"><ArrowLeft size={16} /></button><h1 className="text-2xl font-black italic">PAYSHARE</h1></div>
               <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest">Hi, {userName} • Nhóm: {groupId}</p>
             </div>
-            <button onClick={() => setDark(!dark)} className="p-2 bg-white/10 rounded-lg">{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
+            <button onClick={() => setDark(!dark)} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition">{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
           </div>
           <div className="grid grid-cols-3 gap-3">
              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20"><p className="text-[9px] text-indigo-100 font-bold uppercase mb-1">Tổng chi</p><p className="text-sm font-black truncate">{fmtVND(expenses.reduce((s, e) => s + e.amount, 0))}</p></div>
@@ -172,8 +174,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
         <div className={`p-5 rounded-2xl border ${t.card}`}>
           <SectionTitle icon={<Users size={16} />} title="Thành viên" dark={dark} />
           <div className="flex flex-wrap gap-2">
-            {members.map(m => (<div key={m.id} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 py-1 px-1 pr-3 rounded-full"><Av name={m.name} size={24} /><span className={`text-xs font-bold ${t.text}`}>{m.name}</span></div>))}
-            <button onClick={() => { const n = prompt("Tên thành viên mới:"); if(n) addMember(n); }} className="w-8 h-8 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400"><Plus size={14} /></button>
+            {members.map(m => (<div key={m.userId} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 py-1 px-1 pr-3 rounded-full"><Av name={m.name} size={24} /><span className={`text-xs font-bold ${t.text}`}>{m.name}</span></div>))}
           </div>
         </div>
 
@@ -186,7 +187,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
         {/* Tab Navigation */}
         <div className={`flex p-1.5 rounded-xl border ${t.tab}`}>
           <button onClick={() => setTab("expenses")} className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase transition-all ${tab === "expenses" ? t.tabActive : t.tabInactive}`}>Lịch sử</button>
-          <button onClick={() => setTab("settle")} className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase transition-all ${tab === "settle" ? t.tabActive : t.tabInactive}`}>Chốt nợ</button>
+          <button onClick={() => { setTab("settle"); fetchSettlement(); }} className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase transition-all ${tab === "settle" ? t.tabActive : t.tabInactive}`}>Chốt nợ</button>
           <button onClick={() => { setTab("stats"); fetchStats(); }} className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase transition-all ${tab === "stats" ? t.tabActive : t.tabInactive}`}>Thống kê</button>
         </div>
 
@@ -195,13 +196,13 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
           {tab === "expenses" && (
             <div className="flex flex-col gap-3">
               {expenses.length === 0 ? <p className="text-center text-xs text-slate-400 py-10 italic">Chưa có khoản chi nào...</p> : 
-                [...expenses].reverse().map(exp => (
-                  <div key={exp.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                [...expenses].reverse().map((exp, idx) => (
+                  <div key={exp.id || idx} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800">
                     <div className="flex-1">
-                      <p className={`font-bold text-sm ${t.text}`}>{exp.title}</p>
+                      <p className={`font-bold text-sm ${t.text}`}>{exp.description}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-indigo-600 font-black text-xs">{fmtVND(exp.amount)}</span>
-                        <span className="text-[10px] text-slate-400">• {timeAgo(exp.createdAt)}</span>
+                        <span className="text-[10px] text-slate-400">• {members.find(m => m.userId === exp.paidBy)?.name || "Ẩn danh"}</span>
                         {exp.latitude && <button onClick={() => setViewingExpense(exp)} className="flex items-center gap-0.5 text-indigo-500 hover:text-indigo-700 font-black text-[10px] uppercase"><MapPin size={10} strokeWidth={3} /> Vị trí</button>}
                       </div>
                     </div>
@@ -233,7 +234,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
                     <button 
                       onClick={() => {
                         const email = prompt(`Nhập email của ${d.fromMemberName} để đòi nợ:`);
-                        if(email) remindMember(email, d.toMemberName, d.amount);
+                        if(email) remindMember(email, d.amount);
                       }}
                       className="ml-3 p-2 bg-rose-100 text-rose-600 rounded-lg hover:bg-rose-200 transition-all flex-shrink-0"
                       title="Đòi nợ qua Email"
@@ -249,7 +250,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
           {tab === "stats" && (
             <div>
               <div className="flex items-center justify-center gap-2 mt-2 mb-2 text-indigo-600 dark:text-indigo-400">
-                <PieChartIcon size={18} /> <span className="text-sm font-bold">Cơ cấu chi tiêu nhóm</span>
+                <PieChartIcon size={18} /> <span className="text-sm font-bold">Thống kê số tiền mỗi người đã chi</span>
               </div>
               <StatDashboard data={stats} />
             </div>
@@ -258,7 +259,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
       </div>
 
       {/* Modal View Location */}
-      <Modal open={!!viewingExpense} onClose={() => setViewingExpense(null)} title={`Địa điểm: ${viewingExpense?.title}`} dark={dark}>
+      <Modal open={!!viewingExpense} onClose={() => setViewingExpense(null)} title={`Địa điểm: ${viewingExpense?.description}`} dark={dark}>
         <div className="mb-4">
           {viewingExpense && viewingExpense.latitude != null && viewingExpense.longitude != null ? (
             <MapView latitude={viewingExpense.latitude as number} longitude={viewingExpense.longitude as number} />
@@ -274,22 +275,35 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
 
 // ─── FORM THÊM CHI TIÊU ─────────────────────────────────────────────────────
 function AddExpenseForm({ members, onAdd, dark, groupId }: { members: Member[], onAdd: (e: Expense) => void, dark: boolean, groupId: string }) {
-  const [title, setTitle] = useState(""); const [amount, setAmount] = useState(""); const [payer, setPayer] = useState("");
-  const [location, setLocation] = useState<{lat: number, lng: number} | null>(null); const [showMap, setShowMap] = useState(false);
+  const [desc, setDesc] = useState(""); // Đã sửa tên
+  const [amount, setAmount] = useState(""); 
+  const [payer, setPayer] = useState("");
+  const [location, setLocation] = useState<{lat: number, lng: number} | null>(null); 
+  const [showMap, setShowMap] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault(); if(!title || !amount || !payer) return toast.error("Vui lòng nhập đủ thông tin!");
-    onAdd({ title, amount: parseAmt(amount), paidBy: payer, groupId, splitType: "EQUAL", splitBetween: members.map(m => m.id), latitude: location?.lat, longitude: location?.lng });
-    setTitle(""); setAmount(""); setLocation(null); setShowMap(false);
+    e.preventDefault(); 
+    if(!desc || !amount || !payer) return toast.error("Vui lòng nhập đủ thông tin!");
+    onAdd({ 
+      description: desc, 
+      amount: parseAmt(amount), 
+      paidBy: payer, 
+      groupId, 
+      splitType: "EQUAL", 
+      splitBetween: members.map(m => m.userId), // Đã sửa thành userId
+      latitude: location?.lat, 
+      longitude: location?.lng 
+    });
+    setDesc(""); setAmount(""); setLocation(null); setShowMap(false);
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <input placeholder="Bạn đã chi vào việc gì?" value={title} onChange={e => setTitle(e.target.value)} className="p-3.5 border rounded-xl outline-none dark:bg-slate-900 text-sm font-medium" />
+      <input placeholder="Bạn đã chi vào việc gì?" value={desc} onChange={e => setDesc(e.target.value)} className="p-3.5 border rounded-xl outline-none dark:bg-slate-900 text-sm font-medium" />
       <input placeholder="Số tiền (VND)" value={amount} onChange={e => setAmount(fmtInput(e.target.value))} className="p-3.5 border rounded-xl outline-none dark:bg-slate-900 font-black text-indigo-600 text-lg" />
       <select value={payer} onChange={e => setPayer(e.target.value)} className="p-3.5 border rounded-xl outline-none dark:bg-slate-900 text-sm font-bold text-slate-600">
         <option value="">Ai là người thanh toán?</option>
-        {members.map(m => <option key={m.id} value={m.id}>{m.name.toUpperCase()}</option>)}
+        {members.map(m => <option key={m.userId} value={m.userId}>{m.name.toUpperCase()}</option>)} {/* Sửa thành m.userId */}
       </select>
       <button type="button" onClick={() => setShowMap(!showMap)} className={`flex items-center gap-1.5 text-[10px] font-black uppercase px-3 py-2 rounded-lg border w-max ${location ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}><MapPin size={12} /> {location ? "📍 Đã gắn vị trí" : "Gắn vị trí quán ăn"}</button>
       {showMap && <div className="mt-1"><MapPicker onLocationSelect={(lat, lng) => setLocation({lat, lng})} /></div>}
