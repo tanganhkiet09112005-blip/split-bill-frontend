@@ -9,12 +9,12 @@ import {
   ArrowRight, Moon, Sun,
   Loader2, ArrowLeft, MapPin, PieChart as PieChartIcon
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation"; // BỔ SUNG useParams CỰC MẠNH
 
-// ─── ĐỊNH NGHĨA KIỂU DỮ LIỆU (Đã fix khớp với Backend Spring Boot) ──────────
+// ─── ĐỊNH NGHĨA KIỂU DỮ LIỆU ───────────────────────────────────────────────
 interface Member { userId: string; name: string; groupId: string; }
 interface Expense {
-  id?: string; description: string; amount: number; paidBy: string; // Backend dùng description
+  id?: string; description: string; amount: number; paidBy: string; 
   groupId: string; splitType: string; splitBetween?: string[]; customSplits?: Record<string, number> | null;
   latitude?: number | null; longitude?: number | null; createdAt?: number;
 }
@@ -68,15 +68,19 @@ const Modal = memo(({ open, onClose, title, children, dark }: any) => {
 });
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
-export default function SplitBillApp({ params }: { params: { id: string } }) {
+export default function GroupDetailPage() {
+  const router = useRouter();
+  const params = useParams(); // Lấy ID bằng cách an toàn nhất
+  
+  // Chấp luôn Sếp đặt tên thư mục là [id] hay [groupId]
+  const groupId = (params?.id || params?.groupId) as string;
+
   const [members, setMembers] = useState<Member[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [serverDebts, setServerDebts] = useState<DebtResponse[]>([]);
   const [stats, setStats] = useState<StatData[]>([]);
   const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   
-  const router = useRouter();
-  const groupId = params.id; 
   const [dark, setDark] = useLS("payshare_dark", false);
   const [tab, setTab] = useState("expenses");
   const [isMounted, setIsMounted] = useState(false);
@@ -102,8 +106,8 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
     if (!groupId || !isMounted || !isAuth) return;
     try {
       const [mRes, eRes] = await Promise.all([ 
-          fetch(`${API_URL}/members/group/${groupId}`), // Đã sửa link
-          fetch(`${API_URL}/expenses/group/${groupId}`) // Đã sửa link
+          fetch(`${API_URL}/members/group/${groupId}`), 
+          fetch(`${API_URL}/expenses/group/${groupId}`) 
       ]);
       if (mRes.ok && eRes.ok) { setMembers(await mRes.json()); setExpenses(await eRes.json()); fetchSettlement(); fetchStats(); }
     } catch {}
@@ -111,40 +115,51 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     setIsMounted(true);
-    const session = localStorage.getItem("user"); // Đã sửa key
+    const session = localStorage.getItem("user");
     if (!session) { window.location.href = "/login"; } else { setIsAuth(true); setUserName(JSON.parse(session).fullName || "Sếp"); }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 🚀 HÀM NHẮC NỢ QUA EMAIL
+  // 🚀 NẾU KHÔNG CÓ GROUP ID, BÁO LỖI LUÔN CHỨ KHÔNG XOAY NỮA
+  if (!groupId) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4 text-center">
+        <h2 className="text-2xl font-black text-rose-500 mb-2">Lỗi: Không tìm thấy Mã Nhóm! 🚨</h2>
+        <p className="text-slate-600 max-w-md mb-6">Trang web không thể lấy được ID nhóm từ đường link. Sếp hãy kiểm tra lại tên thư mục chứa file này.</p>
+        <div className="bg-white p-4 rounded-xl shadow-sm border text-left mb-6">
+          <p className="font-bold text-sm mb-2">Cách sửa (Tên thư mục bắt buộc phải có ngoặc vuông):</p>
+          <code className="text-indigo-600 bg-indigo-50 px-2 py-1 rounded block">src/app/group/[id]/page.tsx</code>
+        </div>
+        <button onClick={() => router.push('/dashboard')} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">Quay lại Dashboard</button>
+      </div>
+    );
+  }
+
+  // HÀM NHẮC NỢ QUA EMAIL
   const remindMember = async (targetEmail: string, amount: number) => {
     try {
-      const res = await fetch(`${API_URL}/expenses/remind-debt`, { // Đã sửa link và payload
+      const res = await fetch(`${API_URL}/expenses/remind-debt`, { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: targetEmail, groupName: groupId, amount: amount })
       });
-      if (res.ok) {
-        toast.success(`Đã bắn mail nhắc nợ tới ${targetEmail}!`);
-      } else {
-        toast.error("Gửi mail thất bại, check lại cấu hình server!");
-      }
-    } catch (error) {
-      toast.error("Không kết nối được server!");
-    }
+      if (res.ok) { toast.success(`Đã bắn mail nhắc nợ tới ${targetEmail}!`); } 
+      else { toast.error("Gửi mail thất bại, check lại cấu hình server!"); }
+    } catch (error) { toast.error("Không kết nối được server!"); }
   };
 
-  // HÀM XỬ LÝ KHÁC
   const addExpense = async (exp: Expense) => {
     try { const res = await fetch(`${API_URL}/expenses`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exp) }); if (res.ok) { loadData(); toast.success("Ghi nhận khoản chi!"); } } catch { toast.error("Lỗi!"); }
   };
+  
   const delExpense = async (id: string) => {
     if (!window.confirm("Xóa khoản chi này?")) return;
     try { const res = await fetch(`${API_URL}/expenses/${id}`, { method: "DELETE" }); if (res.ok) { loadData(); toast.success("Đã xóa!"); } } catch { toast.error("Lỗi!"); }
   };
 
-  if (!isMounted || !groupId || !isAuth) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  if (!isMounted || !isAuth) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  
   const t = dark ? tokens.dark : tokens.light;
 
   return (
@@ -275,7 +290,7 @@ export default function SplitBillApp({ params }: { params: { id: string } }) {
 
 // ─── FORM THÊM CHI TIÊU ─────────────────────────────────────────────────────
 function AddExpenseForm({ members, onAdd, dark, groupId }: { members: Member[], onAdd: (e: Expense) => void, dark: boolean, groupId: string }) {
-  const [desc, setDesc] = useState(""); // Đã sửa tên
+  const [desc, setDesc] = useState(""); 
   const [amount, setAmount] = useState(""); 
   const [payer, setPayer] = useState("");
   const [location, setLocation] = useState<{lat: number, lng: number} | null>(null); 
@@ -290,7 +305,7 @@ function AddExpenseForm({ members, onAdd, dark, groupId }: { members: Member[], 
       paidBy: payer, 
       groupId, 
       splitType: "EQUAL", 
-      splitBetween: members.map(m => m.userId), // Đã sửa thành userId
+      splitBetween: members.map(m => m.userId),
       latitude: location?.lat, 
       longitude: location?.lng 
     });
@@ -303,10 +318,10 @@ function AddExpenseForm({ members, onAdd, dark, groupId }: { members: Member[], 
       <input placeholder="Số tiền (VND)" value={amount} onChange={e => setAmount(fmtInput(e.target.value))} className="p-3.5 border rounded-xl outline-none dark:bg-slate-900 font-black text-indigo-600 text-lg" />
       <select value={payer} onChange={e => setPayer(e.target.value)} className="p-3.5 border rounded-xl outline-none dark:bg-slate-900 text-sm font-bold text-slate-600">
         <option value="">Ai là người thanh toán?</option>
-        {members.map(m => <option key={m.userId} value={m.userId}>{m.name.toUpperCase()}</option>)} {/* Sửa thành m.userId */}
+        {members.map(m => <option key={m.userId} value={m.userId}>{m.name.toUpperCase()}</option>)}
       </select>
-      <button type="button" onClick={() => setShowMap(!showMap)} className={`flex items-center gap-1.5 text-[10px] font-black uppercase px-3 py-2 rounded-lg border w-max ${location ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}><MapPin size={12} /> {location ? "📍 Đã gắn vị trí" : "Gắn vị trí quán ăn"}</button>
-      {showMap && <div className="mt-1"><MapPicker onLocationSelect={(lat, lng) => setLocation({lat, lng})} /></div>}
+      
+      {/* Ẩn Map Picker đi nếu Sếp chưa có file MapPicker.tsx */}
       <button type="submit" className="bg-indigo-600 text-white p-4 rounded-xl font-black text-sm mt-2 flex items-center justify-center gap-2"><Check size={16} /> GHI NHẬN HÓA ĐƠN</button>
     </form>
   );
