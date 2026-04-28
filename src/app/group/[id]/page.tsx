@@ -1,18 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
 import dynamic from 'next/dynamic'; 
 import {
   Users, Plus, Trash2, Check, X, ReceiptText, Pencil,
-  ArrowRight, Moon, Sun, Loader2, ArrowLeft, MapPin, PieChart as PieChartIcon, UserPlus
+  ArrowRight, Moon, Sun, Loader2, ArrowLeft, PieChart as PieChartIcon, UserPlus
 } from "lucide-react";
 import { useRouter, useParams } from "next/navigation";
 
 // ─── DYNAMIC IMPORTS ────────────────────────────────────────────────────────
-const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[200px] bg-slate-100 flex items-center justify-center text-xs italic">Đang tải bản đồ...</div>});
-const MapView = dynamic(() => import('@/components/MapView'), { ssr: false, loading: () => <div className="h-[250px] bg-slate-100 flex items-center justify-center text-xs italic">Đang tải vị trí...</div>});
 const StatDashboard = dynamic(() => import('@/components/StatDashboard'), { ssr: false, loading: () => <div className="h-[250px] bg-slate-100 flex items-center justify-center text-xs italic">Đang tải biểu đồ...</div>});
 
 // ─── ĐỊNH NGHĨA KIỂU DỮ LIỆU ───────────────────────────────────────────────
@@ -55,8 +53,7 @@ export default function GroupDetailPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [serverDebts, setServerDebts] = useState<DebtResponse[]>([]);
   const [stats, setStats] = useState<StatData[]>([]);
-  const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
-  const [editingExpense, setEditingExpense] = useState<Expense | null>(null); // QUAN TRỌNG: State sửa
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   
   const [dark, setDark] = useLS("payshare_dark", false);
   const [tab, setTab] = useState("expenses");
@@ -102,6 +99,7 @@ export default function GroupDetailPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // FIX: HÀM THÊM THÀNH VIÊN - CẬP NHẬT GIAO DIỆN TỨC THÌ
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemberName.trim()) return toast.error("Vui lòng nhập tên!");
@@ -110,9 +108,21 @@ export default function GroupDetailPage() {
       const res = await fetch(`${API_URL}/members`, { 
         method: "POST", 
         headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify({ groupId, name: newMemberName, role: "MEMBER", userId: `guest_${Date.now()}` }) 
+        body: JSON.stringify({ 
+            groupId, 
+            name: newMemberName, 
+            role: "MEMBER", 
+            userId: `guest_${Date.now()}` 
+        }) 
       });
-      if (res.ok) { loadData(); toast.success("Đã thêm thành viên!"); setNewMemberName(""); setIsAddMemberOpen(false); }
+      if (res.ok) { 
+        const savedMember = await res.json();
+        // Cập nhật state ngay lập tức để người mới hiện lên cho việc chia tiền
+        setMembers(prev => [...prev, savedMember]);
+        toast.success(`Đã mời ${newMemberName} vào nhóm!`); 
+        setNewMemberName(""); 
+        setIsAddMemberOpen(false); 
+      }
     } catch { toast.error("Lỗi kết nối!"); }
     finally { setIsAddingMember(false); }
   };
@@ -125,7 +135,7 @@ export default function GroupDetailPage() {
       if (res.ok) { 
         loadData(); 
         toast.success(exp.id ? "Đã cập nhật!" : "Đã ghi nhận!"); 
-        setEditingExpense(null); // Thoát chế độ sửa
+        setEditingExpense(null);
       }
     } catch { toast.error("Lỗi mạng!"); }
   };
@@ -165,14 +175,14 @@ export default function GroupDetailPage() {
 
       <div className="max-w-2xl mx-auto px-4 -mt-8 flex flex-col gap-5">
         
-        {/* MEMBERS */}
+        {/* MEMBERS LIST */}
         <div className={`p-5 rounded-2xl border ${t.card}`}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className={`text-sm font-bold flex items-center gap-2 ${t.text}`}><Users size={16} className="text-indigo-600"/> Thành viên</h2>
-            <button onClick={() => setIsAddMemberOpen(true)} className="flex items-center gap-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition"><UserPlus size={14} /> Thêm</button>
+            <h2 className={`text-sm font-bold flex items-center gap-2 ${t.text}`}><Users size={16} className="text-indigo-600"/> Thành viên nhóm</h2>
+            <button onClick={() => setIsAddMemberOpen(true)} className="flex items-center gap-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition"><UserPlus size={14} /> Thêm người</button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {members.map(m => (
+            {members.length === 0 ? <p className="text-[10px] text-slate-400 italic">Nhóm chưa có ai...</p> : members.map(m => (
               <div key={m.userId} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 py-1 px-1 pr-3 rounded-full border border-slate-100 dark:border-slate-800">
                 <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-[10px]">{initials(m.name)}</div>
                 <span className={`text-[11px] font-bold ${t.text}`}>{m.name}</span>
@@ -181,7 +191,7 @@ export default function GroupDetailPage() {
           </div>
         </div>
 
-        {/* EXPENSE FORM (HỖ TRỢ EDIT & SELECT ALL) */}
+        {/* EXPENSE FORM */}
         <div className={`p-5 rounded-2xl border ${t.card} border-2 ${editingExpense ? 'border-indigo-500 shadow-indigo-100 shadow-lg' : ''}`}>
            <h2 className={`text-sm font-bold flex items-center gap-2 ${t.text} mb-4`}>
              {editingExpense ? <Pencil size={16} className="text-indigo-500" /> : <Plus size={16} className="text-indigo-600"/>} 
@@ -197,14 +207,14 @@ export default function GroupDetailPage() {
             />
         </div>
 
-        {/* TABS */}
+        {/* TABS MENU */}
         <div className={`flex p-1.5 rounded-xl border ${t.card} ${t.tab}`}>
           <button onClick={() => setTab("expenses")} className={`flex-1 py-2.5 rounded-lg text-[11px] font-black uppercase transition-all ${tab === "expenses" ? t.tabActive : "text-slate-500"}`}>Lịch sử</button>
           <button onClick={() => { setTab("settle"); fetchSettlement(); }} className={`flex-1 py-2.5 rounded-lg text-[11px] font-black uppercase transition-all ${tab === "settle" ? t.tabActive : "text-slate-500"}`}>Chốt nợ</button>
           <button onClick={() => { setTab("stats"); fetchStats(); }} className={`flex-1 py-2.5 rounded-lg text-[11px] font-black uppercase transition-all ${tab === "stats" ? t.tabActive : "text-slate-500"}`}>Thống kê</button>
         </div>
 
-        {/* LIST */}
+        {/* TAB CONTENT */}
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="min-h-[200px]">
             {tab === "expenses" && (
@@ -216,7 +226,7 @@ export default function GroupDetailPage() {
                         <p className={`font-bold text-sm ${t.text}`}>{exp.description}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-indigo-600 font-black text-xs">{fmtVND(exp.amount)}</span>
-                          <span className={`text-[10px] font-medium ${t.subText}`}>• {members.find(m => m.userId === exp.paidBy)?.name || "Ẩn danh"}</span>
+                          <span className={`text-[10px] font-medium ${t.subText}`}>• {members.find(m => m.userId === exp.paidBy)?.name || "Ẩn danh"} trả</span>
                         </div>
                       </div>
                       <div className="flex gap-1">
@@ -228,36 +238,37 @@ export default function GroupDetailPage() {
                 }
               </div>
             )}
-            {/* Tab settle & stats... (giữ nguyên nợ nần & thống kê) */}
+            
             {tab === "settle" && (
                 <div className="flex flex-col gap-3">
-                  {serverDebts.length === 0 ? <div className={`text-center py-10 rounded-2xl border ${t.card} bg-emerald-50/30 border-emerald-100`}><p className="text-emerald-600 font-black text-base uppercase">🎉 Đã sạch nợ!</p></div> : 
+                  {serverDebts.length === 0 ? <div className={`text-center py-10 rounded-2xl border ${t.card} bg-emerald-50/30 border-emerald-100`}><p className="text-emerald-600 font-black text-base uppercase">🎉 Mọi người đã sòng phẳng!</p></div> : 
                     serverDebts.map((d, i) => (
                       <div key={i} className={`flex flex-col sm:flex-row items-center justify-between p-4 rounded-2xl border ${t.card} gap-4`}>
                         <div className="flex items-center w-full sm:w-auto justify-between flex-1 gap-2">
                           <div className="flex flex-col items-center bg-slate-50 dark:bg-slate-800 p-2 rounded-lg flex-1">
-                            <span className="text-[9px] text-slate-400 font-black mb-1">NGƯỜI NỢ</span>
+                            <span className="text-[9px] text-slate-400 font-black mb-1 uppercase">Người nợ</span>
                             <span className={`text-xs font-bold ${t.text}`}>{d.fromMemberName}</span>
                           </div>
                           <ArrowRight size={16} className="text-slate-300 flex-shrink-0" />
                           <div className="flex flex-col items-center bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-lg flex-1">
-                            <span className="text-[9px] text-emerald-400 font-black mb-1">CHỦ NỢ</span>
+                            <span className="text-[9px] text-emerald-400 font-black mb-1 uppercase">Chủ nợ</span>
                             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{d.toMemberName}</span>
                           </div>
                         </div>
                         <div className="flex items-center justify-between w-full sm:w-auto gap-4 pl-4 sm:border-l border-slate-100 dark:border-slate-800">
                           <span className="text-indigo-600 font-black text-lg">{fmtVND(d.amount)}</span>
-                          <button onClick={() => alert(`Gửi tin nhắn đòi ${d.fromMemberName} trả tiền nhé!`)} className="p-2 bg-rose-100 text-rose-600 rounded-xl hover:bg-rose-200 transition"><ReceiptText size={16} /></button>
+                          <button onClick={() => alert(`Đã gửi tin nhắn nhắc nợ cho ${d.fromMemberName}`)} className="p-2 bg-rose-100 text-rose-600 rounded-xl hover:bg-rose-200 transition"><ReceiptText size={16} /></button>
                         </div>
                       </div>
                     ))
                   }
                 </div>
             )}
+
             {tab === "stats" && (
                 <div className={`p-4 rounded-2xl border ${t.card}`}>
                   <div className="flex items-center justify-center gap-2 mb-4 text-indigo-600">
-                    <PieChartIcon size={18} /> <span className="text-xs font-black uppercase">Phân tích chi tiêu</span>
+                    <PieChartIcon size={18} /> <span className="text-xs font-black uppercase">Biểu đồ chi tiêu</span>
                   </div>
                   <StatDashboard data={stats} />
                 </div>
@@ -266,17 +277,17 @@ export default function GroupDetailPage() {
         </AnimatePresence>
       </div>
 
-      {/* MODAL THÊM MEMBER (giữ nguyên) */}
+      {/* MODAL THÊM THÀNH VIÊN */}
       <AnimatePresence>
         {isAddMemberOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black text-indigo-600 italic">Add Friend</h3>
+                <h3 className="text-xl font-black text-indigo-600 italic">Thêm bạn mới</h3>
                 <button onClick={() => setIsAddMemberOpen(false)} className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full"><X size={18}/></button>
               </div>
               <form onSubmit={handleAddMember}>
-                <input type="text" placeholder="Tên bạn..." value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} className="w-full h-12 px-4 mb-5 border border-slate-200 dark:border-slate-700 dark:bg-slate-800 rounded-xl outline-none focus:border-indigo-500 font-bold" required autoFocus />
+                <input type="text" placeholder="Tên người bạn..." value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} className="w-full h-12 px-4 mb-5 border border-slate-200 dark:border-slate-700 dark:bg-slate-800 rounded-xl outline-none focus:border-indigo-500 font-bold" required autoFocus />
                 <button type="submit" disabled={isAddingMember} className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-lg flex items-center justify-center">
                   {isAddingMember ? <Loader2 className="animate-spin" size={20}/> : "XÁC NHẬN THÊM"}
                 </button>
@@ -289,26 +300,24 @@ export default function GroupDetailPage() {
   );
 }
 
-// ─── FORM HỖ TRỢ CHỌN TẤT CẢ & SỬA HÓA ĐƠN ──────────────────────────────────────
-function AddExpenseForm({ members, onSave, groupId, dark, editData, onCancel }: any) {
+// ─── COMPONENT: FORM HÓA ĐƠN (CHỌN TẤT CẢ & SỬA) ──────────────────────────────
+function AddExpenseForm({ members, onSave, groupId, editData, onCancel }: any) {
   const [desc, setDesc] = useState(""); 
   const [amount, setAmount] = useState(""); 
   const [payer, setPayer] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [location, setLocation] = useState<{lat: number, lng: number} | null>(null); 
-  const [showMap, setShowMap] = useState(false);
 
-  // LOGIC ĐỔ DỮ LIỆU KHI SỬA HOẶC RESET KHI THÊM MỚI
+  // Tự động cập nhật danh sách chia tiền khi có thành viên mới hoặc khi vào chế độ sửa
   useEffect(() => {
     if (editData) {
       setDesc(editData.description);
       setAmount(editData.amount.toString());
       setPayer(editData.paidBy);
       setSelectedIds(editData.splitBetween || members.map((m: any) => m.userId));
-      setLocation(editData.latitude ? {lat: editData.latitude, lng: editData.longitude} : null);
     } else {
-      setDesc(""); setAmount(""); setPayer(""); setLocation(null);
-      setSelectedIds(members.map((m: any) => m.userId)); // Mặc định chọn tất cả
+      setDesc(""); setAmount(""); setPayer(""); 
+      // Mặc định: Thành viên mới thêm vào sẽ tự động được tick chọn chia tiền
+      setSelectedIds(members.map((m: any) => m.userId)); 
     }
   }, [editData, members]);
 
@@ -327,15 +336,14 @@ function AddExpenseForm({ members, onSave, groupId, dark, editData, onCancel }: 
     if(!desc || !amount || !payer || selectedIds.length === 0) return toast.error("Nhập đủ thông tin & chọn người chia nha Sếp!");
     
     onSave({ 
-      id: editData?.id, // Có ID nghĩa là đang sửa
+      id: editData?.id, 
       description: desc, 
       amount: parseAmt(amount), 
       paidBy: payer, 
       groupId, 
       splitType: "EQUAL", 
       splitBetween: selectedIds,
-      latitude: location?.lat, 
-      longitude: location?.lng 
+      createdAt: editData?.createdAt || Date.now()
     });
   };
 
@@ -350,7 +358,7 @@ function AddExpenseForm({ members, onSave, groupId, dark, editData, onCancel }: 
         </select>
       </div>
 
-      {/* CHỌN NGƯỜI CHIA TIỀN */}
+      {/* BOX CHỌN NGƯỜI CHIA TIỀN */}
       <div className="space-y-2">
         <div className="flex justify-between items-center">
           <p className="text-[10px] font-black uppercase text-slate-400">Chia cho ai? ({selectedIds.length})</p>
@@ -369,7 +377,7 @@ function AddExpenseForm({ members, onSave, groupId, dark, editData, onCancel }: 
 
       <div className="flex items-center gap-2 mt-2">
         {editData && (
-          <button type="button" onClick={onCancel} className="flex-1 h-12 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs">HỦY SỬA</button>
+          <button type="button" onClick={onCancel} className="flex-1 h-12 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs uppercase">Hủy sửa</button>
         )}
         <button type="submit" className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white h-12 rounded-xl font-black text-xs uppercase shadow-md flex items-center justify-center gap-2">
           <Check size={14} strokeWidth={4} /> {editData ? "CẬP NHẬT THAY ĐỔI" : "GHI NHẬN HÓA ĐƠN"}
