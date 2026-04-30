@@ -62,7 +62,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const groupId = (params?.id || params?.groupId) as string;
 
-  // 🚀 LƯU TRỮ VĨNH CỬU: Chống bay màu dữ liệu khi F5
+  // 🚀 LƯU TRỮ VĨNH CỬU
   const [members, setMembers] = useLS<Member[]>(`payshare_members_${groupId}`, []);
   const [expenses, setExpenses] = useLS<Expense[]>(`payshare_expenses_${groupId}`, []);
   
@@ -78,7 +78,6 @@ export default function GroupDetailPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://split-bill-backend-5srl.onrender.com/api";
   const t = dark ? tokens.dark : tokens.light;
 
-  // Đồng bộ ngầm với Server nhưng ưu tiên Local
   const loadData = useCallback(async () => {
     if (!groupId || !isMounted) return;
     try {
@@ -105,21 +104,21 @@ export default function GroupDetailPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 🚀 THUẬT TOÁN CHỐT NỢ FRONTEND: Nhanh, mượt, không đợi Backend
+  // 🚀 THUẬT TOÁN CHỐT NỢ FRONTEND
   const serverDebts = useMemo(() => {
     const balances: Record<string, number> = {};
     members.forEach(m => balances[m.userId] = 0);
 
     expenses.forEach(exp => {
       if (!balances[exp.paidBy]) balances[exp.paidBy] = 0;
-      balances[exp.paidBy] += exp.amount; // Người trả tiền được dương
+      balances[exp.paidBy] += exp.amount; 
 
       const splitCount = exp.splitBetween?.length || 1;
       const splitAmount = exp.amount / splitCount;
       
       exp.splitBetween.forEach(userId => {
         if (!balances[userId]) balances[userId] = 0;
-        balances[userId] -= splitAmount; // Người chia tiền bị âm
+        balances[userId] -= splitAmount; 
       });
     });
 
@@ -164,7 +163,7 @@ export default function GroupDetailPage() {
     }).filter(s => s.totalSpent > 0).sort((a,b) => b.totalSpent - a.totalSpent);
   }, [expenses, members]);
 
-  // NÂNG CẤP: Cập nhật giao diện TỨC THÌ (Optimistic Update)
+  // THÊM THÀNH VIÊN
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemberName.trim()) return toast.error("Vui lòng nhập tên!");
@@ -173,7 +172,6 @@ export default function GroupDetailPage() {
     const tempId = `guest_${Date.now()}`;
     const newMember = { groupId, name: newMemberName, role: "MEMBER", userId: tempId };
     
-    // Đẩy ngay lên màn hình
     setMembers(prev => [...prev, newMember]);
     toast.success(`Đã mời ${newMemberName} vào nhóm!`); 
     setNewMemberName(""); 
@@ -185,23 +183,40 @@ export default function GroupDetailPage() {
         headers: { "Content-Type": "application/json" }, 
         body: JSON.stringify(newMember) 
       });
-      loadData(); // Cập nhật lại ID thật từ server ngầm bên dưới
+      loadData(); 
     } catch { toast.error("Lưu server thất bại, đang dùng bộ nhớ tạm!"); }
     finally { setIsAddingMember(false); }
   };
 
+  // XÓA THÀNH VIÊN
+  const handleDeleteMember = async (userId: string, memberName: string) => {
+    if (!window.confirm(`Sếp có chắc chắn muốn XÓA "${memberName}" khỏi nhóm không?`)) return;
+
+    // Cập nhật giao diện ngay lập tức
+    setMembers(prev => prev.filter(m => m.userId !== userId));
+    toast.success(`Đã tiễn ${memberName} khỏi nhóm!`);
+
+    // Đồng bộ với server (NẾU API backend của Sếp hỗ trợ)
+    try {
+      await fetch(`${API_URL}/members/${userId}`, { method: "DELETE" });
+      loadData();
+    } catch {
+      console.warn("Backend không phản hồi, chỉ xóa ở Local");
+    }
+  };
+
+  // LƯU HÓA ĐƠN
   const handleSaveExpense = async (exp: Expense) => {
     const method = exp.id ? "PUT" : "POST";
     const url = exp.id ? `${API_URL}/expenses/${exp.id}` : `${API_URL}/expenses`;
     
-    // Đẩy ngay lên màn hình lịch sử
     const tempExp = { ...exp, id: exp.id || `temp_${Date.now()}` };
     if (method === "POST") setExpenses(prev => [...prev, tempExp]);
     else setExpenses(prev => prev.map(e => e.id === exp.id ? tempExp : e));
 
     toast.success(exp.id ? "Đã cập nhật!" : "🎉 Đã ghi nhận hóa đơn mới!"); 
     setEditingExpense(null);
-    setTab("expenses"); // Giật sang tab Lịch sử thấy ngay hóa đơn mới
+    setTab("settle"); // Tự động giật sang tab Chốt Nợ để xem chia tiền
     
     try {
       await fetch(url, { method: method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(exp) });
@@ -210,11 +225,10 @@ export default function GroupDetailPage() {
     } catch { toast.error("Cảnh báo: Đang lưu offline do mạng yếu!"); return true; }
   };
 
+  // XÓA HÓA ĐƠN
   const delExpense = async (id: string) => {
     if (!window.confirm("Xóa hóa đơn này?")) return;
-    
-    // Xóa ngay trên màn hình
-    setExpenses(prev => prev.filter(e => e.id !== id));
+    setExpenses(prev => prev.filter(e => e.id !== id)); 
     toast.success("Đã xóa!");
     try { await fetch(`${API_URL}/expenses/${id}`, { method: "DELETE" }); loadData(); } catch {}
   };
@@ -225,38 +239,25 @@ export default function GroupDetailPage() {
         <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center">
           <Loader2 className="animate-spin text-white" size={20} />
         </div>
-        <p className="text-sm text-slate-500 font-medium">Đang tải dữ liệu...</p>
+        <p className="text-sm text-slate-500 font-medium">Đang khởi tạo ứng dụng...</p>
       </div>
     </div>
   );
 
   const totalGroupSpent = expenses.reduce((s, e) => s + e.amount, 0);
 
-  // Color pool for member avatars
-  const avatarColors = [
-    "bg-violet-100 text-violet-700", "bg-blue-100 text-blue-700", "bg-emerald-100 text-emerald-700",
-    "bg-amber-100 text-amber-700", "bg-rose-100 text-rose-700", "bg-cyan-100 text-cyan-700",
-  ];
+  const avatarColors = ["bg-violet-100 text-violet-700", "bg-blue-100 text-blue-700", "bg-emerald-100 text-emerald-700", "bg-amber-100 text-amber-700", "bg-rose-100 text-rose-700", "bg-cyan-100 text-cyan-700"];
 
   return (
     <div className={`flex h-screen overflow-hidden font-sans ${t.bg}`}>
-      <Toaster 
-        position="top-center" 
-        toastOptions={{
-          style: { borderRadius: '12px', fontWeight: 600, fontSize: '13px', padding: '12px 16px' },
-          success: { iconTheme: { primary: '#4f46e5', secondary: '#fff' } }
-        }}
-      />
+      <Toaster position="top-center" toastOptions={{ style: { borderRadius: '12px', fontWeight: 600, fontSize: '13px', padding: '12px 16px' }, success: { iconTheme: { primary: '#4f46e5', secondary: '#fff' } } }} />
       
       {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
       <aside className={`w-[220px] hidden md:flex flex-col ${t.sidebar}`}>
-        {/* Logo */}
         <div className="px-6 pt-7 pb-6">
           <button onClick={() => router.push('/dashboard')} className="block">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-indigo-200/60">
-                <span className="text-white font-black text-sm">P</span>
-              </div>
+              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-indigo-200/60"><span className="text-white font-black text-sm">P</span></div>
               <span className={`text-base font-black tracking-tight ${t.text}`}>PayShare</span>
             </div>
             <p className={`text-[10px] font-semibold mt-1 ml-10 uppercase tracking-widest ${t.muted}`}>Smart Split</p>
@@ -265,40 +266,31 @@ export default function GroupDetailPage() {
 
         <div className={`mx-4 border-t ${t.divider} mb-4`} />
         
-        {/* Navigation */}
         <nav className="flex-1 px-3 space-y-0.5">
-          <p className={`text-[10px] font-bold uppercase tracking-widest px-3 mb-2 ${t.muted}`}>Menu</p>
+          <p className={`text-[10px] font-bold uppercase tracking-widest px-3 mb-2 ${t.muted}`}>Bảng điều khiển</p>
           <button onClick={() => router.push('/dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${t.navItem}`}><LayoutDashboard size={16} className="opacity-70" /> Dashboard</button>
-          <button onClick={() => setTab("expenses")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "expenses" ? t.navActive : t.navItem}`}><FolderKanban size={16} className="opacity-70" /> Chi tiết nhóm</button>
-          <button onClick={() => setTab("stats")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "stats" ? t.navActive : t.navItem}`}><BarChart2 size={16} className="opacity-70" /> Phân tích</button>
+          <button onClick={() => setTab("expenses")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "expenses" ? t.navActive : t.navItem}`}><FolderKanban size={16} className="opacity-70" /> Lịch sử hóa đơn</button>
+          <button onClick={() => setTab("settle")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "settle" ? t.navActive : t.navItem}`}><ArrowRight size={16} className="opacity-70" /> Chốt nợ nhóm</button>
+          <button onClick={() => setTab("stats")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "stats" ? t.navActive : t.navItem}`}><BarChart2 size={16} className="opacity-70" /> Phân tích dữ liệu</button>
         </nav>
 
-        {/* Bottom actions */}
         <div className="p-3 space-y-1">
           <div className={`mx-1 border-t ${t.divider} mb-3`} />
-          {/* Theme toggle */}
           <div className={`flex p-1 rounded-lg ${dark ? 'bg-slate-800/60' : 'bg-slate-100/80'} mb-2`}>
             <button onClick={() => setDark(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-bold transition-all ${!dark ? 'bg-white shadow-sm text-indigo-600' : t.muted}`}><Sun size={12} /> Light</button>
             <button onClick={() => setDark(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-bold transition-all ${dark ? 'bg-slate-700 shadow-sm text-indigo-400' : t.muted}`}><Moon size={12} /> Dark</button>
           </div>
-          <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${t.navItem}`}><HelpCircle size={15} className="opacity-60" /> Trợ giúp</button>
           <button onClick={() => { localStorage.removeItem("user"); router.push("/login"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all text-rose-500 hover:bg-rose-50 ${dark ? 'hover:bg-rose-950/30' : ''}`}><LogOut size={15} className="opacity-70" /> Đăng xuất</button>
         </div>
       </aside>
 
       {/* ── MAIN CONTENT ────────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
-        
-        {/* TOPBAR */}
         <header className={`h-16 border-b flex items-center justify-between px-6 shrink-0 ${t.header}`}>
           <div className="flex items-center gap-3 flex-1">
             <button onClick={() => router.push("/dashboard")} className={`md:hidden p-2 rounded-lg transition-colors ${t.navItem}`}><ArrowLeft size={18} /></button>
-            <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border w-full max-w-xs transition-colors ${t.input} ${dark ? 'text-slate-200' : 'text-slate-700'}`}>
-              <Search size={15} className={t.muted} />
-              <input type="text" placeholder="Tìm kiếm khoản chi..." className="bg-transparent border-none outline-none w-full text-sm font-medium placeholder:text-slate-400" />
-            </div>
+            <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border w-full max-w-xs transition-colors ${t.input} ${dark ? 'text-slate-200' : 'text-slate-700'}`}><Search size={15} className={t.muted} /><input type="text" placeholder="Tìm kiếm khoản chi..." className="bg-transparent border-none outline-none w-full text-sm font-medium placeholder:text-slate-400" /></div>
           </div>
-
           <div className="flex items-center gap-3">
             <div className={`text-right hidden sm:block`}>
               <p className={`text-sm font-bold leading-tight ${t.text}`}>{userName}</p>
@@ -308,42 +300,36 @@ export default function GroupDetailPage() {
           </div>
         </header>
 
-        {/* SCROLLABLE CONTENT */}
         <div className={`flex-1 overflow-y-auto ${t.bg}`}>
           <div className="p-6 md:p-8 max-w-[1400px] mx-auto">
 
-            {/* PAGE HEADER */}
             <div className="mb-8 flex items-start justify-between">
               <div>
-                <div className="flex items-center gap-2 mb-1"><span className={`text-[11px] font-bold uppercase tracking-widest ${t.muted}`}>Nhóm chi tiêu</span></div>
+                <div className="flex items-center gap-2 mb-1"><span className={`text-[11px] font-bold uppercase tracking-widest ${t.muted}`}>Quản lý chi tiêu</span></div>
                 <h1 className={`text-2xl font-black tracking-tight ${t.text}`}>{groupId}</h1>
-                <p className={`text-sm mt-1 ${t.subText}`}>Dữ liệu được lưu trữ an toàn ngay trên trình duyệt.</p>
+                <p className={`text-sm mt-1 ${t.subText}`}>Dữ liệu được lưu trữ an toàn trên thiết bị của bạn.</p>
               </div>
             </div>
 
-            {/* STAT CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
               <div className={`p-5 rounded-2xl ${t.card} transition-all duration-200 ${t.cardHover}`}>
                 <div className="flex items-center justify-between mb-4"><p className={`text-[11px] font-bold uppercase tracking-wider ${t.muted}`}>Trạng thái nợ</p><div className="w-8 h-8 bg-rose-100 text-rose-600 rounded-lg flex items-center justify-center"><TrendingUp size={14} /></div></div>
-                <p className="text-2xl font-black text-rose-600 tabular-nums">{serverDebts.length}</p><p className={`text-xs font-medium mt-1 ${t.subText}`}>Giao dịch cần chốt</p>
+                <p className="text-2xl font-black text-rose-600 tabular-nums">{serverDebts.length}</p><p className={`text-xs font-medium mt-1 ${t.subText}`}>Giao dịch cần thanh toán</p>
               </div>
               <div className={`p-5 rounded-2xl ${t.card} transition-all duration-200 ${t.cardHover}`}>
                 <div className="flex items-center justify-between mb-4"><p className={`text-[11px] font-bold uppercase tracking-wider ${t.muted}`}>Quy mô nhóm</p><div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center"><Users size={14} /></div></div>
-                <p className={`text-2xl font-black tabular-nums ${t.text}`}>{members.length}</p><p className={`text-xs font-medium mt-1 ${t.subText}`}>Thành viên</p>
+                <p className={`text-2xl font-black tabular-nums ${t.text}`}>{members.length}</p><p className={`text-xs font-medium mt-1 ${t.subText}`}>Thành viên tham gia</p>
               </div>
               <div className={`p-5 rounded-2xl ${t.card} transition-all duration-200 ${t.cardHover}`}>
                 <div className="flex items-center justify-between mb-4"><p className={`text-[11px] font-bold uppercase tracking-wider ${t.muted}`}>Tổng ngân sách</p><div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center"><DollarSign size={14} /></div></div>
-                <p className="text-2xl font-black text-emerald-600 tabular-nums">{fmtVND(totalGroupSpent)}</p><p className={`text-xs font-medium mt-1 ${t.subText}`}>Tổng chi tiêu</p>
+                <p className="text-2xl font-black text-emerald-600 tabular-nums">{fmtVND(totalGroupSpent)}</p><p className={`text-xs font-medium mt-1 ${t.subText}`}>Tổng tiền đã chi</p>
               </div>
             </div>
 
-            {/* MAIN 2-COLUMN LAYOUT */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               
               {/* LEFT COLUMN */}
               <div className="lg:col-span-5 flex flex-col gap-6">
-                
-                {/* MEMBERS CARD */}
                 <div className={`p-6 rounded-2xl ${t.card}`}>
                   <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-2"><Users size={16} className="text-indigo-500" /><h2 className={`text-sm font-bold ${t.text}`}>Thành viên nhóm</h2><span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${t.badge}`}>{members.length}</span></div>
@@ -351,21 +337,28 @@ export default function GroupDetailPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {members.length === 0 ? (
-                      <div className={`w-full text-center py-6 rounded-xl border border-dashed ${dark ? 'border-slate-700 text-slate-500' : 'border-slate-200 text-slate-400'} text-xs font-medium`}>Chưa có thành viên nào</div>
+                      <div className={`w-full text-center py-6 rounded-xl border border-dashed ${dark ? 'border-slate-700 text-slate-500' : 'border-slate-200 text-slate-400'} text-xs font-medium`}>Chưa có ai trong nhóm, thêm ngay Sếp ơi!</div>
                     ) : members.map((m, idx) => (
-                      <div key={m.userId} className={`flex items-center gap-2 py-1.5 px-3 rounded-full border ${dark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-white border-slate-200'} shadow-sm`}>
+                      <div key={m.userId} className={`group flex items-center gap-2 py-1.5 pl-3 pr-1.5 rounded-full border ${dark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-white border-slate-200'} shadow-sm transition-colors hover:border-rose-200 dark:hover:border-rose-900`}>
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] ${avatarColors[idx % avatarColors.length]}`}>{initials(m.name)}</div>
-                        <span className={`text-xs font-semibold ${t.text}`}>{m.name}</span>
+                        <span className={`text-xs font-semibold ${t.text} whitespace-nowrap`}>{m.name}</span>
+                        {/* NÚT XÓA THÀNH VIÊN Ở ĐÂY */}
+                        <button 
+                          onClick={() => handleDeleteMember(m.userId, m.name)} 
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors ml-1"
+                          title="Xóa thành viên"
+                        >
+                          <X size={12} strokeWidth={3} />
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* EXPENSE FORM CARD */}
                 <div className={`p-6 rounded-2xl transition-all duration-300 ${t.card} ${editingExpense ? `ring-2 ring-indigo-500/30 shadow-lg shadow-indigo-100/50 ${dark ? 'shadow-indigo-900/20' : ''}` : ''}`}>
                   <div className="flex items-center gap-2 mb-6">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${editingExpense ? 'bg-amber-100 text-amber-600' : 'bg-indigo-100 text-indigo-600'}`}>{editingExpense ? <Pencil size={13} /> : <Plus size={14} strokeWidth={2.5} />}</div>
-                    <h2 className={`text-sm font-bold ${t.text}`}>{editingExpense ? "Chỉnh sửa hóa đơn" : "Thêm khoản chi"}</h2>
+                    <h2 className={`text-sm font-bold ${t.text}`}>{editingExpense ? "Chỉnh sửa hóa đơn" : "Ghi nhận khoản chi"}</h2>
                     {editingExpense && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full">Đang sửa</span>}
                   </div>
                   <AddExpenseForm members={members} onSave={handleSaveExpense} groupId={groupId} dark={dark} editData={editingExpense} onCancel={() => setEditingExpense(null)} t={t} />
@@ -374,19 +367,21 @@ export default function GroupDetailPage() {
 
               {/* RIGHT COLUMN */}
               <div className="lg:col-span-7 flex flex-col gap-5">
-                
-                {/* TABS */}
                 <div className={`flex p-1 rounded-xl ${dark ? 'bg-slate-800/60' : 'bg-slate-100/80'}`}>
                   {[
-                    { key: "expenses", label: "Lịch sử" },
-                    { key: "settle", label: "Chốt nợ" },
-                    { key: "stats", label: "Phân tích" },
+                    { key: "expenses", label: "Lịch sử hóa đơn" },
+                    { key: "settle", label: "Bảng chốt nợ" },
+                    { key: "stats", label: "Phân tích chi tiêu" },
                   ].map(item => (
-                    <button key={item.key} onClick={() => setTab(item.key)} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all duration-200 ${tab === item.key ? t.tabActive : `${t.muted} hover:text-slate-700 dark:hover:text-slate-300`}`}>{item.label}</button>
+                    <button 
+                      key={item.key} onClick={() => setTab(item.key)} 
+                      className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all duration-200 ${tab === item.key ? t.tabActive : `${t.muted} hover:text-slate-700 dark:hover:text-slate-300`}`}
+                    >
+                      {item.label}
+                    </button>
                   ))}
                 </div>
 
-                {/* TAB CONTENT */}
                 <AnimatePresence mode="wait">
                   <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="min-h-[300px]">
                     
@@ -396,8 +391,8 @@ export default function GroupDetailPage() {
                         {expenses.length === 0 ? (
                           <div className={`flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed ${dark ? 'border-slate-700' : 'border-slate-200'}`}>
                             <ReceiptText size={32} className={`mb-3 ${t.muted}`} />
-                            <p className={`text-sm font-semibold ${t.subText}`}>Chưa có giao dịch nào</p>
-                            <p className={`text-xs mt-1 ${t.muted}`}>Thêm khoản chi đầu tiên bên trái</p>
+                            <p className={`text-sm font-semibold ${t.subText}`}>Lịch sử trống</p>
+                            <p className={`text-xs mt-1 ${t.muted}`}>Hãy nhập một khoản chi ở form bên trái.</p>
                           </div>
                         ) : [...expenses].reverse().map((exp, idx) => (
                           <motion.div key={exp.id || idx} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }} className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${t.card} ${t.cardHover}`}>
@@ -408,7 +403,7 @@ export default function GroupDetailPage() {
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-indigo-600 font-black text-sm tabular-nums">{fmtVND(exp.amount)}</span>
                                   <span className={`text-xs ${t.muted}`}>·</span>
-                                  <span className={`text-xs font-medium ${t.subText}`}>{members.find(m => m.userId === exp.paidBy)?.name || "Ẩn danh"} trả</span>
+                                  <span className={`text-xs font-medium ${t.subText}`}>{members.find(m => m.userId === exp.paidBy)?.name || "Ẩn danh"} trả cho {exp.splitBetween?.length || 0} người</span>
                                 </div>
                               </div>
                             </div>
@@ -427,7 +422,7 @@ export default function GroupDetailPage() {
                         {serverDebts.length === 0 ? (
                           <div className={`flex flex-col items-center justify-center py-16 rounded-2xl border ${dark ? 'bg-emerald-950/20 border-emerald-900/30' : 'bg-emerald-50/60 border-emerald-100'}`}>
                             <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-4"><Check size={24} className="text-emerald-600" strokeWidth={2.5} /></div>
-                            <p className="text-emerald-700 dark:text-emerald-400 font-black text-base">Đã sòng phẳng!</p>
+                            <p className="text-emerald-700 dark:text-emerald-400 font-black text-base">Mọi người sòng phẳng!</p>
                             <p className={`text-xs mt-1 font-medium ${t.muted}`}>Không ai nợ ai cả 🎉</p>
                           </div>
                         ) : serverDebts.map((d, i) => (
@@ -447,7 +442,7 @@ export default function GroupDetailPage() {
                                 <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs mb-1.5">{initials(d.toMemberName)}</div>
                                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{d.toMemberName}</p>
                               </div>
-                              <button onClick={() => alert(`Đã gửi thông báo đòi tiền đến ${d.fromMemberName}`)} className="p-2.5 bg-rose-100 dark:bg-rose-950/40 text-rose-600 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors ml-1 shrink-0" title="Gửi thông báo"><ReceiptText size={16} /></button>
+                              <button onClick={() => alert(`Sếp nhắc khéo ${d.fromMemberName} đi nhé!`)} className="p-2.5 bg-rose-100 dark:bg-rose-950/40 text-rose-600 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors ml-1 shrink-0"><ReceiptText size={16} /></button>
                             </div>
                           </motion.div>
                         ))}
@@ -458,12 +453,12 @@ export default function GroupDetailPage() {
                     {tab === "stats" && (
                       <div className={`p-6 rounded-2xl border ${t.card}`}>
                         <div className="flex items-center justify-between mb-6">
-                          <div className="flex items-center gap-2"><PieChartIcon size={16} className="text-indigo-500" /><h3 className={`text-sm font-bold ${t.text}`}>Biểu đồ đóng góp</h3></div>
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${dark ? 'bg-indigo-950/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>IUH Logic</span>
+                          <div className="flex items-center gap-2"><PieChartIcon size={16} className="text-indigo-500" /><h3 className={`text-sm font-bold ${t.text}`}>Người chi tiêu mạnh nhất</h3></div>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${dark ? 'bg-indigo-950/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>Logic App</span>
                         </div>
                         
                         {stats.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-12"><Loader2 size={24} className={`animate-spin mb-3 ${t.muted}`} /><p className={`text-sm ${t.muted}`}>Đang tính toán số liệu...</p></div>
+                          <div className="flex flex-col items-center justify-center py-12"><Loader2 size={24} className={`animate-spin mb-3 ${t.muted}`} /><p className={`text-sm ${t.muted}`}>Chưa có dữ liệu tính toán...</p></div>
                         ) : (
                           <div className="space-y-5">
                             {stats.map((s, i) => {
@@ -472,8 +467,14 @@ export default function GroupDetailPage() {
                               return (
                                 <div key={i}>
                                   <div className="flex justify-between items-center mb-2">
-                                    <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${barColors[i % barColors.length]}`} /><span className={`text-sm font-semibold ${t.text}`}>{s.memberName}</span></div>
-                                    <div className="flex items-center gap-2"><span className={`text-xs font-medium tabular-nums ${t.subText}`}>{fmtVND(s.totalSpent)}</span><span className={`text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-full ${dark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{pct}%</span></div>
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-2 h-2 rounded-full ${barColors[i % barColors.length]}`} />
+                                      <span className={`text-sm font-semibold ${t.text}`}>{s.memberName}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-xs font-medium tabular-nums ${t.subText}`}>{fmtVND(s.totalSpent)}</span>
+                                      <span className={`text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-full ${dark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{pct}%</span>
+                                    </div>
                                   </div>
                                   <div className={`w-full h-2 rounded-full overflow-hidden ${dark ? 'bg-slate-800' : 'bg-slate-100'}`}>
                                     <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.6, delay: i * 0.08, ease: "easeOut" }} className={`h-full rounded-full ${barColors[i % barColors.length]}`} />
@@ -481,7 +482,7 @@ export default function GroupDetailPage() {
                                 </div>
                               );
                             })}
-                            <div className={`mt-6 pt-5 border-t ${t.divider} flex items-center justify-between`}><p className={`text-xs font-medium ${t.muted}`}>Tổng chi tiêu nhóm</p><p className={`text-sm font-black tabular-nums ${t.text}`}>{fmtVND(totalGroupSpent)}</p></div>
+                            <div className={`mt-6 pt-5 border-t ${t.divider} flex items-center justify-between`}><p className={`text-xs font-medium ${t.muted}`}>Tổng ngân sách lưu thông</p><p className={`text-sm font-black tabular-nums ${t.text}`}>{fmtVND(totalGroupSpent)}</p></div>
                           </div>
                         )}
                       </div>
@@ -552,17 +553,17 @@ function AddExpenseForm({ members, onSave, groupId, editData, onCancel, t }: any
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <input placeholder="Mô tả khoản chi..." value={desc} onChange={e => setDesc(e.target.value)} disabled={isSubmitting} className={`${inputBase} h-11 placeholder:font-medium placeholder:text-slate-400`} />
+      <input placeholder="VD: Lẩu bò sinh viên..." value={desc} onChange={e => setDesc(e.target.value)} disabled={isSubmitting} className={`${inputBase} h-11 placeholder:font-medium placeholder:text-slate-400`} />
       <div className="grid grid-cols-2 gap-3">
         <input placeholder="Số tiền" value={amount} onChange={e => setAmount(fmtInput(e.target.value))} disabled={isSubmitting} className={`${inputBase} h-11 text-indigo-600 font-black tabular-nums`} />
         <select value={payer} onChange={e => setPayer(e.target.value)} disabled={isSubmitting} className={`${inputBase} h-11 cursor-pointer`}>
-          <option value="" disabled>Ai trả?</option>
+          <option value="" disabled>Ai trả tiền?</option>
           {members.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
       </div>
 
       <div className="space-y-2.5">
-        <div className="flex justify-between items-center"><p className={`text-[11px] font-bold uppercase tracking-wider ${t?.muted || 'text-slate-400'}`}>Chia tiền cho ({selectedIds.length}/{members.length})</p><button type="button" onClick={toggleAll} disabled={isSubmitting} className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">{selectedIds.length === members.length ? "Bỏ chọn hết" : "Chọn tất cả"}</button></div>
+        <div className="flex justify-between items-center"><p className={`text-[11px] font-bold uppercase tracking-wider ${t?.muted || 'text-slate-400'}`}>Tham gia chia ({selectedIds.length}/{members.length})</p><button type="button" onClick={toggleAll} disabled={isSubmitting} className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">{selectedIds.length === members.length ? "Bỏ chọn hết" : "Chọn tất cả"}</button></div>
         <div className="flex flex-wrap gap-2">
           {members.map((m: any) => (
             <button key={m.userId} type="button" disabled={isSubmitting} onClick={() => toggleUser(m.userId)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${selectedIds.includes(m.userId) ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200/50 dark:shadow-none' : `${t?.card || 'bg-slate-50 border-slate-200'} ${t?.subText || 'text-slate-500'} hover:border-indigo-300`} ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}>{m.name}</button>
@@ -573,7 +574,7 @@ function AddExpenseForm({ members, onSave, groupId, editData, onCancel, t }: any
       <div className="flex items-center gap-2.5 mt-2">
         {editData && <button type="button" onClick={onCancel} disabled={isSubmitting} className={`flex-1 h-11 rounded-xl font-bold text-xs uppercase tracking-wide transition-colors ${t?.badge || 'bg-slate-100 text-slate-500'} hover:bg-slate-200 dark:hover:bg-slate-700`}>Hủy</button>}
         <button type="submit" disabled={isSubmitting} className="flex-[2] h-11 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl font-bold text-xs uppercase tracking-wide shadow-md shadow-indigo-200/50 dark:shadow-none flex items-center justify-center gap-2 transition-all">
-          {isSubmitting ? <><Loader2 className="animate-spin" size={16} /> Đang xử lý...</> : <><Check size={15} strokeWidth={2.5} /> {editData ? "Cập nhật" : "Ghi nhận"}</>}
+          {isSubmitting ? <><Loader2 className="animate-spin" size={16} /> Đang xử lý...</> : <><Check size={15} strokeWidth={2.5} /> {editData ? "Cập nhật" : "Ghi nhận hóa đơn"}</>}
         </button>
       </div>
     </form>

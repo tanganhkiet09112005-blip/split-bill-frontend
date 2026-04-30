@@ -19,7 +19,7 @@ export default function LoginPage() {
   // Tự động dùng URL của Render
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://split-bill-backend-5srl.onrender.com/api";
 
-  // --- 1. XỬ LÝ ĐĂNG NHẬP BẰNG TÀI KHOẢN THƯỜNG ---
+  // ─── 1. XỬ LÝ ĐĂNG NHẬP BẰNG TÀI KHOẢN THƯỜNG ──────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -35,11 +35,12 @@ export default function LoginPage() {
       if (res.ok) {
         const data = await res.json();
         if (typeof window !== "undefined") {
-          localStorage.setItem("token", data.token); // Lưu token
-          localStorage.setItem("user", JSON.stringify(data)); // Đổi thành "user" cho khớp với Dashboard
+          localStorage.setItem("token", data.token); 
+          localStorage.setItem("user", JSON.stringify(data)); // Lưu dữ liệu user
         }
         toast.success(`Chào mừng Sếp ${data.fullName} trở lại!`);
-        setTimeout(() => { router.push("/dashboard"); }, 1000); // Chuyển về Dashboard
+        // CHỐT HẠ: Đăng nhập xong nhảy thẳng vào giao diện Dashboard tổng
+        setTimeout(() => { router.push("/dashboard"); }, 1000); 
       } else {
         setError("Email hoặc mật khẩu không đúng!");
       }
@@ -50,11 +51,11 @@ export default function LoginPage() {
     }
   };
 
-  // --- 2. XỬ LÝ ĐĂNG NHẬP GOOGLE TÍCH HỢP CODE MỚI ---
+  // ─── 2. XỬ LÝ ĐĂNG NHẬP BẰNG GOOGLE ─────────────────────────────────────────
   const handleGoogleLogin = async (credentialResponse: any) => {
     setIsLoading(true);
     const googleToken = credentialResponse.credential;
-    console.log("Token lấy từ Google:", googleToken); // Log ra để dễ debug
+    console.log("Token lấy từ Google:", googleToken);
 
     try {
       const res = await fetch(`${API_URL}/auth/google`, {
@@ -66,15 +67,15 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        // Đăng nhập thành công -> Lưu dữ liệu và chuyển hướng
         if (typeof window !== "undefined") {
           localStorage.setItem("token", data.token);
-          localStorage.setItem("user", JSON.stringify(data)); // Lưu đúng tên "user"
+          localStorage.setItem("user", JSON.stringify(data)); 
         }
         toast.success(`Đăng nhập thành công! Chào mừng Sếp ${data.fullName}`);
+        // CHỐT HẠ: Đăng nhập Google xong cũng nhảy thẳng vào Dashboard tổng
         setTimeout(() => { router.push("/dashboard"); }, 1000);
       } else {
-        toast.error("Lỗi từ Backend: " + data);
+        toast.error("Lỗi từ Backend: " + (data.message || "Đăng nhập thất bại"));
         console.error("Chi tiết lỗi:", data);
       }
     } catch (error) {
@@ -87,10 +88,10 @@ export default function LoginPage() {
 
   return (
     <div className={`min-h-screen bg-slate-50 flex items-center justify-center p-4 ${sans.className}`}>
-      {/* Toast để hiện thông báo đẹp */}
       <Toaster position="top-center" />
       <div className="w-full max-w-4xl bg-white rounded-[2rem] shadow-2xl flex flex-col md:flex-row overflow-hidden min-h-[550px] border border-slate-100">
         
+        {/* CỘT TRÁI (FORM) */}
         <div className="w-full md:w-1/2 p-10 md:p-14 flex flex-col justify-center">
           <div className="mb-8">
             <h1 className="text-2xl font-black text-indigo-600 tracking-tight mb-1">PAYSHARE</h1>
@@ -99,7 +100,7 @@ export default function LoginPage() {
 
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h2>
-            <p className="text-sm font-medium text-slate-500">Đăng nhập để xem các khoản nợ của bạn.</p>
+            <p className="text-sm font-medium text-slate-500">Đăng nhập để vào Bảng điều khiển.</p>
           </div>
 
           {error && (
@@ -111,8 +112,8 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-indigo-600 transition-all" required />
             <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-indigo-600 transition-all" required />
-            <button type="submit" disabled={isLoading} className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all flex items-center justify-center">
-              {isLoading ? <Loader2 size={18} className="animate-spin" /> : "Login"}
+            <button type="submit" disabled={isLoading} className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all flex items-center justify-center shadow-md shadow-indigo-200">
+              {isLoading ? <Loader2 size={18} className="animate-spin" /> : "Đăng nhập"}
             </button>
           </form>
 
@@ -122,12 +123,12 @@ export default function LoginPage() {
             <div className="h-px bg-slate-200 flex-1"></div>
           </div>
 
-          {/* NÚT GOOGLE ĐÃ GẮN LOGIC MỚI */}
+          {/* NÚT GOOGLE */}
           <div className="flex justify-center">
             <GoogleLogin
               onSuccess={handleGoogleLogin}
               onError={() => {
-                console.log("Đăng nhập Google thất bại (User tắt popup hoặc lỗi mạng)");
+                console.log("Đăng nhập Google thất bại");
                 toast.error("Đăng nhập Google bị hủy hoặc thất bại!");
               }}
               useOneTap
@@ -147,6 +148,7 @@ export default function LoginPage() {
           <h2 className="text-4xl lg:text-5xl font-black text-white leading-[1.1] relative z-10">
             Effortless <br/> Shared <br/> Finances.
           </h2>
+          <p className="text-indigo-200 mt-4 relative z-10 font-medium">Báo cáo đồ án xịn xò nhất IUH</p>
         </div>
       </div>
     </div>
