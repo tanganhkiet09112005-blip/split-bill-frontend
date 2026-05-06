@@ -83,7 +83,6 @@ export default function DashboardPage() {
       } catch (error) {
         console.error("Lỗi kết nối tới Server:", error);
       }
-      // ĐÃ XÓA setIsLoading(false) Ở ĐÂY
     };
 
     const session = localStorage.getItem("user");
@@ -92,9 +91,8 @@ export default function DashboardPage() {
       setUserName(u.fullName || "Anh Kiệt");
       setUserId(u.id || u.email || "guest");
       
-      // CHO VÀO TRANG LUÔN, KHÔNG CẦN ĐỢI SERVER
       setIsLoading(false); 
-      fetchGroupsFromServer(); // Tải data ngầm
+      fetchGroupsFromServer(); 
     } else {
       router.push("/login"); 
     }
@@ -139,7 +137,7 @@ export default function DashboardPage() {
     return <Home size={18} className="text-white" />;
   };
 
-  // 🚀 BƯỚC 3: TẠO NHÓM MỚI BẮN LÊN BACKEND (ĐÃ NÂNG CẤP BẮT LỖI TẬN GỐC)
+  // 🚀 BƯỚC 3: TẠO NHÓM MỚI BẮN LÊN BACKEND
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return toast.error("Chưa nhập tên nhóm Sếp ơi!");
@@ -160,7 +158,8 @@ export default function DashboardPage() {
         body: JSON.stringify({
           name: newGroupName,
           type: newGroupType,
-          color: color
+          color: color,
+          userId: userId // 👈 ĐÃ BƠM THÊM ID NGƯỜI DÙNG VÀO ĐÂY ĐỂ TRÁNH LỖI NULL CỦA JAVA
         })
       });
 
@@ -170,12 +169,10 @@ export default function DashboardPage() {
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
         setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
       } else {
-        // NẾU BACKEND TỪ CHỐI, IN RA MÃ LỖI VÀ NỘI DUNG LỖI
         const errorText = await res.text();
         toast.error(`Backend báo lỗi ${res.status}: ${errorText || 'Từ chối tạo'}`, { id: toastId, duration: 6000 });
       }
     } catch (error: any) {
-      // BẮT LỖI SẬP MẠNG HOẶC SAI LINK API
       toast.error(`Lỗi kết nối: ${error.message}. Kiểm tra lại Link API!`, { id: toastId, duration: 6000 });
     }
   };
@@ -195,7 +192,7 @@ export default function DashboardPage() {
         if (res.ok) {
           setGroups(prev => prev.filter(g => g.id !== id));
           toast.success("Đã xóa nhóm!", { id: toastId });
-          localStorage.removeItem(`payshare_expenses_${id}`); // Xóa rác local
+          localStorage.removeItem(`payshare_expenses_${id}`); 
         } else {
           toast.error("Xóa nhóm thất bại!", { id: toastId });
         }
