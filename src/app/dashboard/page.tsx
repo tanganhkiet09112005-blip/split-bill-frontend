@@ -156,10 +156,15 @@ export default function DashboardPage() {
           "Authorization": `Bearer ${token}` 
         },
         body: JSON.stringify({
-          name: newGroupName,
-          type: newGroupType,
-          color: color,
-          userId: userId // 👈 ĐÃ BƠM THÊM ID NGƯỜI DÙNG VÀO ĐÂY ĐỂ TRÁNH LỖI NULL CỦA JAVA
+        name: newGroupName,
+        type: newGroupType,
+        color: color,
+        userId: userId,       // Nghi phạm 1
+        user_id: userId,      // Nghi phạm 2
+        id: userId,           // Nghi phạm 3
+        owner: userId,        // Nghi phạm 4
+        createdBy: userId,    // Nghi phạm 5
+        email: userId// 👈 ĐÃ BƠM THÊM ID NGƯỜI DÙNG VÀO ĐÂY ĐỂ TRÁNH LỖI NULL CỦA JAVA
         })
       });
 
