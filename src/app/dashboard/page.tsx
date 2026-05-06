@@ -64,71 +64,61 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: ĐỒNG BỘ DATA VÀ TỰ ĐỘNG QUÉT HÓA ĐƠN
+  // 🚀 BƯỚC 1: ĐỒNG BỘ ĐA THIẾT BỊ (CLOUD-FIRST SYNC)
   useEffect(() => {
     const fetchGroupsFromServer = async (uid: string | number) => {
       try {
         const token = localStorage.getItem("token");
+        
+        // 1. Máy này dù mới hay cũ đều phải gọi Server trước
         const res = await fetch(`${API_URL}/groups`, {
           method: "GET",
           headers: { "Authorization": `Bearer ${token}` }
         });
         
-        let fetchedData = [];
         if (res.ok) {
-          fetchedData = await res.json();
-          if (!Array.isArray(fetchedData)) fetchedData = [];
+          const serverData = await res.json();
+          
+          if (Array.isArray(serverData)) {
+            // Lấy Sổ tay của máy hiện tại (nếu là máy mới thì cái này sẽ trống rỗng [])
+            const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+            
+            const syncedGroups = serverData.map((serverGroup: any) => {
+              const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
+              
+              // TRÁI TIM CỦA ĐỒNG BỘ: Ưu tiên lấy dữ liệu từ Server.
+              const serverBalance = Number(serverGroup.balance) || 0;
+              const serverMembers = Number(serverGroup.members) || 1;
+              
+              // Nếu Server có tiền hoặc có nhiều người -> Chứng tỏ Server đã lưu -> LẤY CỦA SERVER
+              const useServerData = serverBalance !== 0 || serverMembers > 1;
+
+              return {
+                ...serverGroup,
+                balance: useServerData ? serverBalance : (localGroup ? localGroup.balance : 0),
+                members: useServerData ? serverMembers : (localGroup ? localGroup.members : 1)
+              };
+            });
+
+            // Gộp thêm các nhóm mà Sếp tạo lúc mất mạng (nếu có)
+            const serverIds = serverData.map((g: any) => String(g.id));
+            const localOnlyGroups = oldLocalGroups.filter((g: any) => !serverIds.includes(String(g.id)));
+            const finalGroups = [...syncedGroups, ...localOnlyGroups];
+
+            // 2. Chốt số liệu hiển thị lên màn hình
+            setGroups(finalGroups);
+            
+            // 3. Ghi đè vào Sổ tay của máy tính này để lần sau mở nhanh hơn
+            localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(finalGroups));
+          }
+        } else {
+          // Chỉ lấy Local nếu Server sập
+          const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+          setGroups(localGroups);
         }
-
-        const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
-        
-        // 1. Quét dữ liệu từ Server và cộng dồn bill ở Local
-        const syncedGroups = fetchedData.map((serverGroup: any) => {
-          let localSpent = 0;
-          let localMembersCount = 1;
-          
-          // CHIÊU THỨC MỚI: Tự động chui vào sổ hóa đơn để cộng tiền
-          try {
-            const expData = localStorage.getItem(`payshare_expenses_${serverGroup.id}`);
-            if (expData) {
-               const exps = JSON.parse(expData);
-               if (Array.isArray(exps)) localSpent = exps.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-            }
-            const memData = localStorage.getItem(`payshare_members_${serverGroup.id}`);
-            if (memData) {
-               const mems = JSON.parse(memData);
-               if (Array.isArray(mems)) localMembersCount = mems.length;
-            }
-          } catch(e) {}
-
-          const serverBalance = Number(serverGroup.balance) || 0;
-          const serverMembers = Number(serverGroup.members) || 1;
-          
-          // Nếu Backend trả 0đ, dùng tổng tiền vừa tính ở Local!
-          return {
-            ...serverGroup,
-            balance: serverBalance !== 0 ? serverBalance : localSpent,
-            members: serverMembers > 1 ? serverMembers : localMembersCount
-          };
-        });
-
-        // 2. Lọc các nhóm chưa lên được Server (Lỗi 500)
-        const serverIds = fetchedData.map((g: any) => String(g.id));
-        const localOnlyGroups = oldLocalGroups.filter((g: any) => !serverIds.includes(String(g.id))).map((g: any) => {
-           let localSpent = g.balance || 0;
-           try {
-             const expData = localStorage.getItem(`payshare_expenses_${g.id}`);
-             if (expData) localSpent = JSON.parse(expData).reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
-           } catch(e) {}
-           return { ...g, balance: localSpent };
-        });
-
-        const finalGroups = [...syncedGroups, ...localOnlyGroups];
-        setGroups(finalGroups);
-        localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(finalGroups));
-
       } catch (error) {
-        console.error("Lỗi:", error);
+        console.error("Lỗi kết nối tới Server:", error);
+        // Rớt mạng thì xài tạm Local
         const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
         setGroups(localGroups);
       } finally {
@@ -146,24 +136,42 @@ export default function DashboardPage() {
         safeNumericId = 1; 
       }
       setUserId(safeNumericId);
+      
+      // Bắt đầu quy trình đồng bộ Đám mây
       fetchGroupsFromServer(safeNumericId); 
     } else {
       router.push("/login"); 
     }
   }, [router]);
 
-  // 🚀 BƯỚC 2: TÍNH TOÁN ANALYTICS DỰA TRÊN SỐ TIỀN ĐÃ CỘNG DỒN
+  // 🚀 BƯỚC 1.5: SAO LƯU LIÊN TỤC XUỐNG MÁY (BACKUP)
+  useEffect(() => {
+    if (!isLoading && userId !== "guest" && groups.length > 0) {
+      localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
+    }
+  }, [groups, isLoading, userId]);
+
   useEffect(() => {
     let currentBalance = 0;
     let currentSpent = 0;
     const typeStats: Record<string, number> = { Trip: 0, Shopping: 0, Home: 0 };
 
     groups.forEach(g => {
-      // Số tiền này giờ đã lấy chuẩn từ bước 1
-      const amount = Math.abs(g.balance || 0);
-      currentBalance += g.balance || 0;
-      currentSpent += amount;
-      if(typeStats[g.type] !== undefined) typeStats[g.type] += amount;
+      currentBalance += (g.balance || 0);
+      try {
+        const localData = localStorage.getItem(`payshare_expenses_${g.id}`);
+        if (localData) {
+          const groupExpenses: any[] = JSON.parse(localData);
+          if (Array.isArray(groupExpenses)) {
+            const spentInGroup = groupExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+            currentSpent += spentInGroup;
+            if(typeStats[g.type] !== undefined) typeStats[g.type] += spentInGroup;
+          }
+        } else if (g.balance > 0) {
+           currentSpent += Math.abs(g.balance);
+           if(typeStats[g.type] !== undefined) typeStats[g.type] += Math.abs(g.balance);
+        }
+      } catch (e) {}
     });
 
     setTotalBalance(currentBalance);
@@ -235,7 +243,8 @@ export default function DashboardPage() {
         setGroups(prev => [safeGroup, ...prev]); 
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
       } else {
-        toast.error(`Backend lỗi, nhưng đã lưu tạm vào máy!`, { id: toastId, duration: 4000 });
+        const errorText = await res.text();
+        toast.error(`Backend báo lỗi ${res.status}, nhưng nhóm vẫn được lưu tạm ở máy!`, { id: toastId, duration: 4000 });
         setGroups(prev => [fallbackGroup, ...prev]); 
       }
     } catch (error: any) {
@@ -261,14 +270,15 @@ export default function DashboardPage() {
           method: "DELETE",
           headers: { "Authorization": `Bearer ${token}` }
         });
-      } catch (error) {}
+      } catch (error) {
+      }
     }
   };
 
   if (isLoading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fc]">
       <Loader2 className="animate-spin text-indigo-600 mb-4" size={32} />
-      <p className="text-slate-500 font-medium">Đang tải cấu hình...</p>
+      <p className="text-slate-500 font-medium">Đang tải và đồng bộ dữ liệu...</p>
     </div>
   );
 
