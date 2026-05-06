@@ -64,13 +64,13 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: ĐỒNG BỘ 2 CHIỀU (BẢO VỆ DỮ LIỆU LOCAL TUYỆT ĐỐI)
+  // 🚀 BƯỚC 1: ĐỒNG BỘ ĐA THIẾT BỊ (CLOUD-FIRST SYNC)
   useEffect(() => {
     const fetchGroupsFromServer = async (uid: string | number) => {
-      const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
-      
       try {
         const token = localStorage.getItem("token");
+        
+        // 1. Máy này dù mới hay cũ đều phải gọi Server trước
         const res = await fetch(`${API_URL}/groups`, {
           method: "GET",
           headers: { "Authorization": `Bearer ${token}` }
@@ -80,36 +80,49 @@ export default function DashboardPage() {
           const serverData = await res.json();
           
           if (Array.isArray(serverData)) {
-            // 1. Lấy nhóm từ Server đắp thêm tiền từ Local
-            const cloudGroups = serverData.map((serverGroup: any) => {
+            // Lấy Sổ tay của máy hiện tại (nếu là máy mới thì cái này sẽ trống rỗng [])
+            const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+            
+            const syncedGroups = serverData.map((serverGroup: any) => {
               const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
-              const isServerBalanceValid = serverGroup.balance !== undefined && serverGroup.balance !== null && serverGroup.balance !== 0;
-              const isServerMembersValid = serverGroup.members !== undefined && serverGroup.members !== null && serverGroup.members !== 1;
+              
+              // TRÁI TIM CỦA ĐỒNG BỘ: Ưu tiên lấy dữ liệu từ Server.
+              const serverBalance = Number(serverGroup.balance) || 0;
+              const serverMembers = Number(serverGroup.members) || 1;
+              
+              // Nếu Server có tiền hoặc có nhiều người -> Chứng tỏ Server đã lưu -> LẤY CỦA SERVER
+              const useServerData = serverBalance !== 0 || serverMembers > 1;
 
               return {
                 ...serverGroup,
-                balance: isServerBalanceValid ? serverGroup.balance : (localGroup ? localGroup.balance : 0),
-                members: isServerMembersValid ? serverGroup.members : (localGroup ? localGroup.members : 1)
+                balance: useServerData ? serverBalance : (localGroup ? localGroup.balance : 0),
+                members: useServerData ? serverMembers : (localGroup ? localGroup.members : 1)
               };
             });
 
-            // 2. GIỮ LẠI các nhóm kẹt ở Local (do Backend bị lỗi 500 lúc tạo chưa lưu được)
+            // Gộp thêm các nhóm mà Sếp tạo lúc mất mạng (nếu có)
             const serverIds = serverData.map((g: any) => String(g.id));
             const localOnlyGroups = oldLocalGroups.filter((g: any) => !serverIds.includes(String(g.id)));
+            const finalGroups = [...syncedGroups, ...localOnlyGroups];
 
-            // 3. Gộp cả 2 lại: Không bao giờ mất dữ liệu
-            const finalGroups = [...cloudGroups, ...localOnlyGroups];
-
+            // 2. Chốt số liệu hiển thị lên màn hình
             setGroups(finalGroups);
-          } else {
-            setGroups(oldLocalGroups); // Lỗi Server trả linh tinh -> Dùng Local
+            
+            // 3. Ghi đè vào Sổ tay của máy tính này để lần sau mở nhanh hơn
+            localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(finalGroups));
           }
         } else {
-          setGroups(oldLocalGroups); // Server sập -> Dùng Local
+          // Chỉ lấy Local nếu Server sập
+          const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+          setGroups(localGroups);
         }
       } catch (error) {
         console.error("Lỗi kết nối tới Server:", error);
-        setGroups(oldLocalGroups); // Rớt mạng -> Dùng Local
+        // Rớt mạng thì xài tạm Local
+        const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+        setGroups(localGroups);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -124,14 +137,14 @@ export default function DashboardPage() {
       }
       setUserId(safeNumericId);
       
-      setIsLoading(false); 
+      // Bắt đầu quy trình đồng bộ Đám mây
       fetchGroupsFromServer(safeNumericId); 
     } else {
       router.push("/login"); 
     }
   }, [router]);
 
-  // 🚀 BƯỚC 1.5: GHI NGƯỢC XUỐNG LOCAL (LIÊN TỤC CẬP NHẬT)
+  // 🚀 BƯỚC 1.5: SAO LƯU LIÊN TỤC XUỐNG MÁY (BACKUP)
   useEffect(() => {
     if (!isLoading && userId !== "guest" && groups.length > 0) {
       localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
@@ -189,7 +202,6 @@ export default function DashboardPage() {
 
     const toastId = toast.loading("Đang tạo nhóm trên Server...");
     
-    // Tạo sẵn 1 nhóm ảo để phòng hờ Backend sập
     const fallbackGroup = {
       id: `group_${Date.now()}`,
       name: newGroupName,
@@ -231,7 +243,6 @@ export default function DashboardPage() {
         setGroups(prev => [safeGroup, ...prev]); 
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
       } else {
-        // BACKEND LỖI 500? KỆ NÓ, VẪN LƯU VÀO LOCAL ĐỂ XÀI TẠM!
         const errorText = await res.text();
         toast.error(`Backend báo lỗi ${res.status}, nhưng nhóm vẫn được lưu tạm ở máy!`, { id: toastId, duration: 4000 });
         setGroups(prev => [fallbackGroup, ...prev]); 
@@ -249,7 +260,6 @@ export default function DashboardPage() {
     if (window.confirm(`Sếp có chắc chắn muốn xóa nhóm "${name}" không? Toàn bộ dữ liệu sẽ mất!`)) {
       const toastId = toast.loading("Đang xóa...");
       
-      // Cứ xóa ở Local trước cho mượt
       setGroups(prev => prev.filter(g => String(g.id) !== String(id)));
       localStorage.removeItem(`payshare_expenses_${id}`); 
       toast.success("Đã xóa nhóm!", { id: toastId });
@@ -261,7 +271,6 @@ export default function DashboardPage() {
           headers: { "Authorization": `Bearer ${token}` }
         });
       } catch (error) {
-        // Kệ rớt mạng, vì đã xóa ở Local rồi
       }
     }
   };
@@ -269,7 +278,7 @@ export default function DashboardPage() {
   if (isLoading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fc]">
       <Loader2 className="animate-spin text-indigo-600 mb-4" size={32} />
-      <p className="text-slate-500 font-medium">Đang tải cấu hình...</p>
+      <p className="text-slate-500 font-medium">Đang tải và đồng bộ dữ liệu...</p>
     </div>
   );
 
