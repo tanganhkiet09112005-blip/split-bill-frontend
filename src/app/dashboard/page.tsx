@@ -163,10 +163,15 @@ export default function DashboardPage() {
           "Authorization": `Bearer ${token}` 
         },
         body: JSON.stringify({
-          name: newGroupName,
+         name: newGroupName,
           type: newGroupType,
           color: color,
-          userId: userId // 👈 Đã được bảo kê ép thành CỐ SỐ (ví dụ: 1) ở trên, Java không bao giờ từ chối
+          // Rải lại "cơn mưa biến" nhưng lần này TẤT CẢ đều là SỐ (đã được bảo kê ở trên)
+          userId: userId,
+          user_id: userId,
+          id: userId,
+          owner: userId,
+          createdBy: userId// 👈 Đã được bảo kê ép thành CỐ SỐ (ví dụ: 1) ở trên, Java không bao giờ từ chối
         })
       });
 
