@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
@@ -9,7 +9,9 @@ import {
   HelpCircle, LogOut, Search, Bell, Plane, Home, ShoppingBag, Loader2, X, Trash2, PieChartIcon
 } from "lucide-react";
 
-// ─── UTILS & TOKENS ─────────────────────────────────────────────────────────
+// ─── UTILS & TÙY CHỈNH API ──────────────────────────────────────────────────
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api"; // Thay đổi link API theo Backend của Sếp
+
 const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n)) + " đ";
 const initials = (n: string) => n ? n.trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?";
 
@@ -44,11 +46,9 @@ interface Group { id: string; name: string; type: string; members: number; balan
 export default function DashboardPage() {
   const router = useRouter();
   
-  // Giao diện
   const [dark, setDark] = useLS("payshare_dark", false);
-  const [activeTab, setActiveTab] = useState("dashboard"); // Quản lý Menu Trái
+  const [activeTab, setActiveTab] = useState("dashboard");
   
-  // Dữ liệu User & Độc lập
   const [userId, setUserId] = useState("guest");
   const [userName, setUserName] = useState("Anh Kiệt");
   const [groups, setGroups] = useState<Group[]>([]);
@@ -64,40 +64,48 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: NHẬN DIỆN USER & TẢI DATA RIÊNG BIỆT
+  // 🚀 BƯỚC 1: LẤY DATA TỪ SERVER SAU KHI ĐĂNG NHẬP
   useEffect(() => {
+    const fetchGroupsFromServer = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${API_URL}/groups`, {
+          method: "GET",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setGroups(data); // Cập nhật nhóm từ Database
+        } else {
+          console.error("Lỗi lấy danh sách nhóm");
+        }
+      } catch (error) {
+        console.error("Lỗi kết nối tới Server:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     const session = localStorage.getItem("user");
     if (session) {
       const u = JSON.parse(session);
       setUserName(u.fullName || "Anh Kiệt");
-      const uid = u.id || u.email || "guest";
-      setUserId(uid);
-
-      // Kéo Data nhóm của riêng User này ra (Tài khoản mới sẽ trống trơn [])
-      const userGroups = localStorage.getItem(`payshare_groups_${uid}`);
-      if (userGroups) setGroups(JSON.parse(userGroups));
-      else setGroups([]); 
+      setUserId(u.id || u.email || "guest");
+      fetchGroupsFromServer(); // Kéo data khi có session
     } else {
       router.push("/login"); 
     }
-    setTimeout(() => setIsLoading(false), 400);
   }, [router]);
 
-  // 🚀 BƯỚC 2: LƯU DATA RIÊNG LẠI CHO USER ĐÓ MỖI KHI CÓ THAY ĐỔI
-  useEffect(() => {
-    if (!isLoading && userId !== "guest") {
-      localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
-    }
-  }, [groups, isLoading, userId]);
-
-  // 🚀 BƯỚC 3: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ ANALYTICS TỔNG
+  // 🚀 BƯỚC 2: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ (Phần này tạm thời vẫn đọc Expense từ Local cho khỏi lỗi UI cũ)
   useEffect(() => {
     let currentBalance = 0;
     let currentSpent = 0;
     const typeStats: Record<string, number> = { Trip: 0, Shopping: 0, Home: 0 };
 
     groups.forEach(g => {
-      currentBalance += g.balance;
+      currentBalance += (g.balance || 0);
       try {
         const localData = localStorage.getItem(`payshare_expenses_${g.id}`);
         if (localData) {
@@ -114,12 +122,11 @@ export default function DashboardPage() {
     setTotalBalance(currentBalance);
     setTotalSpent(currentSpent);
     
-    // Đổ data cho màn hình Analytics
     setAnalyticsData([
        { type: "Du lịch (Trip)", spent: typeStats["Trip"], color: "bg-indigo-500" },
        { type: "Mua sắm (Shopping)", spent: typeStats["Shopping"], color: "bg-amber-500" },
        { type: "Gia đình (Home)", spent: typeStats["Home"], color: "bg-emerald-500" },
-    ].filter(item => item.spent > 0).sort((a,b) => b.spent - a.spent)); // Chỉ hiện mục có xài tiền, xếp từ cao xuống thấp
+    ].filter(item => item.spent > 0).sort((a,b) => b.spent - a.spent));
   }, [groups]);
 
   const toggleTheme = (val: boolean) => setDark(val);
@@ -130,7 +137,8 @@ export default function DashboardPage() {
     return <Home size={18} className="text-white" />;
   };
 
-  const handleAddGroup = (e: React.FormEvent) => {
+  // 🚀 BƯỚC 3: TẠO NHÓM MỚI BẮN LÊN BACKEND
+  const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return toast.error("Chưa nhập tên nhóm Sếp ơi!");
 
@@ -138,27 +146,57 @@ export default function DashboardPage() {
     if (newGroupType === "Shopping") color = "bg-amber-500";
     if (newGroupType === "Home") color = "bg-emerald-500";
 
-    const newGroup: Group = {
-      id: `group_${Date.now()}`,
-      name: newGroupName,
-      type: newGroupType,
-      members: 1, 
-      balance: 0,
-      color: color
-    };
+    const toastId = toast.loading("Đang tạo nhóm trên Server...");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/groups`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          name: newGroupName,
+          type: newGroupType,
+          color: color
+        })
+      });
 
-    setGroups(prev => [newGroup, ...prev]);
-    toast.success(`Đã tạo nhóm "${newGroupName}"!`);
-    setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
+      if (res.ok) {
+        const newGroup = await res.json();
+        setGroups(prev => [newGroup, ...prev]); // Thêm ngay vào UI
+        toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
+        setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
+      } else {
+        toast.error("Không thể tạo nhóm!", { id: toastId });
+      }
+    } catch (error) {
+      toast.error("Lỗi kết nối Server!", { id: toastId });
+    }
   };
 
-  const handleDeleteGroup = (e: React.MouseEvent, id: string, name: string) => {
+  // 🚀 BƯỚC 4: XÓA NHÓM TRÊN BACKEND
+  const handleDeleteGroup = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation(); 
     if (window.confirm(`Sếp có chắc chắn muốn xóa nhóm "${name}" không? Toàn bộ dữ liệu sẽ mất!`)) {
-      setGroups(prev => prev.filter(g => g.id !== id));
-      toast.success("Đã xóa nhóm!");
-      localStorage.removeItem(`payshare_members_${id}`);
-      localStorage.removeItem(`payshare_expenses_${id}`);
+      const toastId = toast.loading("Đang xóa...");
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${API_URL}/groups/${id}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          setGroups(prev => prev.filter(g => g.id !== id));
+          toast.success("Đã xóa nhóm!", { id: toastId });
+          localStorage.removeItem(`payshare_expenses_${id}`); // Xóa rác local
+        } else {
+          toast.error("Xóa nhóm thất bại!", { id: toastId });
+        }
+      } catch (error) {
+        toast.error("Lỗi kết nối Server!", { id: toastId });
+      }
     }
   };
 
@@ -284,7 +322,7 @@ export default function DashboardPage() {
                       <div className="flex items-end justify-between mb-3">
                         <p className={`text-xs font-medium ${t.muted}`}>Id: ...{group.id.slice(-4)}</p>
                         <p className={`text-sm font-bold ${group.balance < 0 ? 'text-rose-500' : group.balance > 0 ? 'text-emerald-500' : t.subText}`}>
-                          {group.balance > 0 ? '+' : ''}{fmtVND(group.balance)}
+                          {group.balance > 0 ? '+' : ''}{fmtVND(group.balance || 0)}
                         </p>
                       </div>
                       <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
