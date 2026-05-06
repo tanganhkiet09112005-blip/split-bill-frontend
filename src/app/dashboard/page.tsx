@@ -64,9 +64,11 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: CHẾ ĐỘ ĐỒNG BỘ ĐÁM MÂY (CLOUD SYNC)
+  // 🚀 BƯỚC 1: ĐỒNG BỘ 2 CHIỀU (BẢO VỆ DỮ LIỆU LOCAL TUYỆT ĐỐI)
   useEffect(() => {
     const fetchGroupsFromServer = async (uid: string | number) => {
+      const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+      
       try {
         const token = localStorage.getItem("token");
         const res = await fetch(`${API_URL}/groups`, {
@@ -78,14 +80,9 @@ export default function DashboardPage() {
           const serverData = await res.json();
           
           if (Array.isArray(serverData)) {
-            // Đọc sổ tay cũ phòng hờ Server chưa có tính năng lưu chi phí
-            const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
-            
+            // 1. Lấy nhóm từ Server đắp thêm tiền từ Local
             const cloudGroups = serverData.map((serverGroup: any) => {
               const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
-              
-              // CHÌA KHÓA NẰM Ở ĐÂY: Ưu tiên lấy từ Server. Nếu Server báo = 0, mới nhìn xuống LocalStorage.
-              // Điều này đảm bảo 2 máy tính sẽ có cùng 1 dữ liệu nếu Server đã lưu.
               const isServerBalanceValid = serverGroup.balance !== undefined && serverGroup.balance !== null && serverGroup.balance !== 0;
               const isServerMembersValid = serverGroup.members !== undefined && serverGroup.members !== null && serverGroup.members !== 1;
 
@@ -96,15 +93,23 @@ export default function DashboardPage() {
               };
             });
 
-            setGroups(cloudGroups);
-            // Chép ngược mảng Đám Mây này xuống máy tính để Cache
-            localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(cloudGroups));
+            // 2. GIỮ LẠI các nhóm kẹt ở Local (do Backend bị lỗi 500 lúc tạo chưa lưu được)
+            const serverIds = serverData.map((g: any) => String(g.id));
+            const localOnlyGroups = oldLocalGroups.filter((g: any) => !serverIds.includes(String(g.id)));
+
+            // 3. Gộp cả 2 lại: Không bao giờ mất dữ liệu
+            const finalGroups = [...cloudGroups, ...localOnlyGroups];
+
+            setGroups(finalGroups);
           } else {
-            setGroups([]);
+            setGroups(oldLocalGroups); // Lỗi Server trả linh tinh -> Dùng Local
           }
+        } else {
+          setGroups(oldLocalGroups); // Server sập -> Dùng Local
         }
       } catch (error) {
         console.error("Lỗi kết nối tới Server:", error);
+        setGroups(oldLocalGroups); // Rớt mạng -> Dùng Local
       }
     };
 
@@ -126,7 +131,13 @@ export default function DashboardPage() {
     }
   }, [router]);
 
-  // 🚀 BƯỚC 2: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ (Hỗ trợ đọc từ Đám Mây)
+  // 🚀 BƯỚC 1.5: GHI NGƯỢC XUỐNG LOCAL (LIÊN TỤC CẬP NHẬT)
+  useEffect(() => {
+    if (!isLoading && userId !== "guest" && groups.length > 0) {
+      localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
+    }
+  }, [groups, isLoading, userId]);
+
   useEffect(() => {
     let currentBalance = 0;
     let currentSpent = 0;
@@ -144,7 +155,6 @@ export default function DashboardPage() {
             if(typeStats[g.type] !== undefined) typeStats[g.type] += spentInGroup;
           }
         } else if (g.balance > 0) {
-           // Giả định tổng chi tiêu nếu chỉ có Cloud Data mà máy này chưa tải Expense
            currentSpent += Math.abs(g.balance);
            if(typeStats[g.type] !== undefined) typeStats[g.type] += Math.abs(g.balance);
         }
@@ -178,6 +188,17 @@ export default function DashboardPage() {
     if (newGroupType === "Home") color = "bg-emerald-500";
 
     const toastId = toast.loading("Đang tạo nhóm trên Server...");
+    
+    // Tạo sẵn 1 nhóm ảo để phòng hờ Backend sập
+    const fallbackGroup = {
+      id: `group_${Date.now()}`,
+      name: newGroupName,
+      type: newGroupType,
+      color: color,
+      balance: 0,
+      members: 1
+    };
+
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/groups`, {
@@ -203,46 +224,44 @@ export default function DashboardPage() {
         try { responseData = await res.json(); } catch(e) {}
 
         const safeGroup = {
-          id: (responseData as any).id || `group_${Date.now()}`,
-          name: (responseData as any).name || newGroupName,
-          type: (responseData as any).type || newGroupType,
-          color: (responseData as any).color || color,
-          balance: (responseData as any).balance || 0,
-          members: (responseData as any).members || 1
+          ...fallbackGroup,
+          id: (responseData as any).id || fallbackGroup.id,
         };
 
         setGroups(prev => [safeGroup, ...prev]); 
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
-        setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
       } else {
+        // BACKEND LỖI 500? KỆ NÓ, VẪN LƯU VÀO LOCAL ĐỂ XÀI TẠM!
         const errorText = await res.text();
-        toast.error(`Backend báo lỗi ${res.status}: ${errorText || 'Từ chối tạo'}`, { id: toastId, duration: 6000 });
+        toast.error(`Backend báo lỗi ${res.status}, nhưng nhóm vẫn được lưu tạm ở máy!`, { id: toastId, duration: 4000 });
+        setGroups(prev => [fallbackGroup, ...prev]); 
       }
     } catch (error: any) {
-      toast.error(`Lỗi kết nối: ${error.message}. Kiểm tra lại Link API!`, { id: toastId, duration: 6000 });
+      toast.error(`Rớt mạng! Đã lưu nhóm tạm vào máy.`, { id: toastId, duration: 4000 });
+      setGroups(prev => [fallbackGroup, ...prev]); 
     }
+    
+    setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
   };
 
   const handleDeleteGroup = async (e: React.MouseEvent, id: string | number, name: string) => {
     e.stopPropagation(); 
     if (window.confirm(`Sếp có chắc chắn muốn xóa nhóm "${name}" không? Toàn bộ dữ liệu sẽ mất!`)) {
       const toastId = toast.loading("Đang xóa...");
+      
+      // Cứ xóa ở Local trước cho mượt
+      setGroups(prev => prev.filter(g => String(g.id) !== String(id)));
+      localStorage.removeItem(`payshare_expenses_${id}`); 
+      toast.success("Đã xóa nhóm!", { id: toastId });
+
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`${API_URL}/groups/${id}`, {
+        await fetch(`${API_URL}/groups/${id}`, {
           method: "DELETE",
           headers: { "Authorization": `Bearer ${token}` }
         });
-
-        if (res.ok) {
-          setGroups(prev => prev.filter(g => g.id !== id));
-          toast.success("Đã xóa nhóm!", { id: toastId });
-          localStorage.removeItem(`payshare_expenses_${id}`); 
-        } else {
-          toast.error("Xóa nhóm thất bại!", { id: toastId });
-        }
       } catch (error) {
-        toast.error("Lỗi kết nối Server!", { id: toastId });
+        // Kệ rớt mạng, vì đã xóa ở Local rồi
       }
     }
   };
@@ -381,7 +400,7 @@ export default function DashboardPage() {
               </motion.div>
             )}
 
-            {/* ── GÓC ANALYTICS (NÂNG CẤP MỚI) ── */}
+            {/* ── GÓC ANALYTICS ── */}
             {activeTab === "analytics" && (
               <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}} className="pt-4 max-w-[800px] mx-auto">
                 <div className="mb-8">
