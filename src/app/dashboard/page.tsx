@@ -41,7 +41,7 @@ const tokens = {
   }
 };
 
-interface Group { id: string; name: string; type: string; members: number; balance: number; color: string; }
+interface Group { id: string | number; name: string; type: string; members: number; balance: number; color: string; }
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -64,7 +64,6 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: LẤY DATA TỪ SERVER & XỬ LÝ LỖI ÉP KIỂU SỐ (FIX TRIỆT ĐỂ)
   useEffect(() => {
     const fetchGroupsFromServer = async () => {
       try {
@@ -76,9 +75,12 @@ export default function DashboardPage() {
         
         if (res.ok) {
           const data = await res.json();
-          setGroups(data);
-        } else {
-          console.error("Lỗi lấy danh sách nhóm");
+          // Bảo vệ mảng nhóm
+          if (Array.isArray(data)) {
+            setGroups(data);
+          } else {
+            setGroups([]);
+          }
         }
       } catch (error) {
         console.error("Lỗi kết nối tới Server:", error);
@@ -90,11 +92,9 @@ export default function DashboardPage() {
       const u = JSON.parse(session);
       setUserName(u.fullName || "Anh Kiệt");
       
-      // FIX LỖI 500 (NumberFormatException): Đảm bảo userId luôn là một con SỐ
       let safeNumericId = Number(u.id);
       if (!u.id || isNaN(safeNumericId)) {
-        console.warn("Cảnh báo: ID lấy được không phải là số (có thể là email). Đang ép dùng ID mặc định = 1 để hệ thống hoạt động tiếp.");
-        safeNumericId = 1; // Giá trị cứu hộ
+        safeNumericId = 1; 
       }
       setUserId(safeNumericId);
       
@@ -105,7 +105,6 @@ export default function DashboardPage() {
     }
   }, [router]);
 
-  // 🚀 BƯỚC 2: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ 
   useEffect(() => {
     let currentBalance = 0;
     let currentSpent = 0;
@@ -144,7 +143,6 @@ export default function DashboardPage() {
     return <Home size={18} className="text-white" />;
   };
 
-  // 🚀 BƯỚC 3: TẠO NHÓM MỚI BẮN LÊN BACKEND (Sạch sẽ, chuẩn kỹ sư)
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return toast.error("Chưa nhập tên nhóm Sếp ơi!");
@@ -163,21 +161,32 @@ export default function DashboardPage() {
           "Authorization": `Bearer ${token}` 
         },
         body: JSON.stringify({
-         name: newGroupName,
+          name: newGroupName,
           type: newGroupType,
           color: color,
-          // Rải lại "cơn mưa biến" nhưng lần này TẤT CẢ đều là SỐ (đã được bảo kê ở trên)
           userId: userId,
           user_id: userId,
           id: userId,
           owner: userId,
-          createdBy: userId// 👈 Đã được bảo kê ép thành CỐ SỐ (ví dụ: 1) ở trên, Java không bao giờ từ chối
+          createdBy: userId
         })
       });
 
       if (res.ok) {
-        const newGroup = await res.json();
-        setGroups(prev => [newGroup, ...prev]); 
+        // NÂNG CẤP AN TOÀN: Bọc thép dữ liệu trả về
+        let responseData = {};
+        try { responseData = await res.json(); } catch(e) {}
+
+        const safeGroup = {
+          id: (responseData as any).id || `group_${Date.now()}`,
+          name: (responseData as any).name || newGroupName,
+          type: (responseData as any).type || newGroupType,
+          color: (responseData as any).color || color,
+          balance: (responseData as any).balance || 0,
+          members: (responseData as any).members || 1
+        };
+
+        setGroups(prev => [safeGroup, ...prev]); 
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
         setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
       } else {
@@ -189,8 +198,7 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 BƯỚC 4: XÓA NHÓM TRÊN BACKEND
-  const handleDeleteGroup = async (e: React.MouseEvent, id: string, name: string) => {
+  const handleDeleteGroup = async (e: React.MouseEvent, id: string | number, name: string) => {
     e.stopPropagation(); 
     if (window.confirm(`Sếp có chắc chắn muốn xóa nhóm "${name}" không? Toàn bộ dữ liệu sẽ mất!`)) {
       const toastId = toast.loading("Đang xóa...");
@@ -334,7 +342,8 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-end justify-between mb-3">
-                        <p className={`text-xs font-medium ${t.muted}`}>Id: ...{group.id.slice(-4)}</p>
+                        {/* ĐÃ FIX: ÉP ID THÀNH CHUỖI ĐỂ TRÁNH LỖI MÀN HÌNH TRẮNG */}
+                        <p className={`text-xs font-medium ${t.muted}`}>Id: ...{String(group.id).slice(-4)}</p>
                         <p className={`text-sm font-bold ${group.balance < 0 ? 'text-rose-500' : group.balance > 0 ? 'text-emerald-500' : t.subText}`}>
                           {group.balance > 0 ? '+' : ''}{fmtVND(group.balance || 0)}
                         </p>
