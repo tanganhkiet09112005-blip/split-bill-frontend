@@ -64,7 +64,7 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: LẤY DATA SERVER VÀ GỘP CHUNG VỚI DATA LOCAL (CỨU TINH CHỐNG MẤT DỮ LIỆU)
+  // 🚀 BƯỚC 1: CHẾ ĐỘ ĐỒNG BỘ ĐÁM MÂY (CLOUD SYNC)
   useEffect(() => {
     const fetchGroupsFromServer = async (uid: string | number) => {
       try {
@@ -78,20 +78,27 @@ export default function DashboardPage() {
           const serverData = await res.json();
           
           if (Array.isArray(serverData)) {
-            // Lấy Sổ tay lưu Nhóm cũ ở Local
+            // Đọc sổ tay cũ phòng hờ Server chưa có tính năng lưu chi phí
             const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
             
-            // Lấy Khung (ID, Tên, Màu) từ Server, lấy Ruột (Thành viên, Tiền) từ Local
-            const mergedGroups = serverData.map((serverGroup: any) => {
+            const cloudGroups = serverData.map((serverGroup: any) => {
               const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
+              
+              // CHÌA KHÓA NẰM Ở ĐÂY: Ưu tiên lấy từ Server. Nếu Server báo = 0, mới nhìn xuống LocalStorage.
+              // Điều này đảm bảo 2 máy tính sẽ có cùng 1 dữ liệu nếu Server đã lưu.
+              const isServerBalanceValid = serverGroup.balance !== undefined && serverGroup.balance !== null && serverGroup.balance !== 0;
+              const isServerMembersValid = serverGroup.members !== undefined && serverGroup.members !== null && serverGroup.members !== 1;
+
               return {
                 ...serverGroup,
-                balance: localGroup ? localGroup.balance : (serverGroup.balance || 0),
-                members: localGroup ? localGroup.members : (serverGroup.members || 1)
+                balance: isServerBalanceValid ? serverGroup.balance : (localGroup ? localGroup.balance : 0),
+                members: isServerMembersValid ? serverGroup.members : (localGroup ? localGroup.members : 1)
               };
             });
 
-            setGroups(mergedGroups);
+            setGroups(cloudGroups);
+            // Chép ngược mảng Đám Mây này xuống máy tính để Cache
+            localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(cloudGroups));
           } else {
             setGroups([]);
           }
@@ -119,14 +126,7 @@ export default function DashboardPage() {
     }
   }, [router]);
 
-  // 🚀 BƯỚC 1.5: GHI NGƯỢC XUỐNG LOCAL (CHỐT SỔ CHO TRANG CHI TIẾT ĐỌC)
-  useEffect(() => {
-    if (!isLoading && userId !== "guest" && groups.length > 0) {
-      localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
-    }
-  }, [groups, isLoading, userId]);
-
-
+  // 🚀 BƯỚC 2: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ (Hỗ trợ đọc từ Đám Mây)
   useEffect(() => {
     let currentBalance = 0;
     let currentSpent = 0;
@@ -143,6 +143,10 @@ export default function DashboardPage() {
             currentSpent += spentInGroup;
             if(typeStats[g.type] !== undefined) typeStats[g.type] += spentInGroup;
           }
+        } else if (g.balance > 0) {
+           // Giả định tổng chi tiêu nếu chỉ có Cloud Data mà máy này chưa tải Expense
+           currentSpent += Math.abs(g.balance);
+           if(typeStats[g.type] !== undefined) typeStats[g.type] += Math.abs(g.balance);
         }
       } catch (e) {}
     });
@@ -365,7 +369,7 @@ export default function DashboardPage() {
                       <div className="flex items-end justify-between mb-3">
                         <p className={`text-xs font-medium ${t.muted}`}>Id: ...{String(group.id).slice(-4)}</p>
                         <p className={`text-sm font-bold ${group.balance < 0 ? 'text-rose-500' : group.balance > 0 ? 'text-emerald-500' : t.subText}`}>
-                          {group.balance > 0 ? '+' : ''}{fmtVND(group.balance || 0)}
+                          {group.balance > 0 ? '+' : ''}{fmtVND(group.balance)}
                         </p>
                       </div>
                       <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
