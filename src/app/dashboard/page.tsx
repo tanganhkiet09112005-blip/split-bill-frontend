@@ -64,8 +64,9 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
+  // 🚀 BƯỚC 1: LẤY DATA SERVER VÀ GỘP CHUNG VỚI DATA LOCAL (CỨU TINH CHỐNG MẤT DỮ LIỆU)
   useEffect(() => {
-    const fetchGroupsFromServer = async () => {
+    const fetchGroupsFromServer = async (uid: string | number) => {
       try {
         const token = localStorage.getItem("token");
         const res = await fetch(`${API_URL}/groups`, {
@@ -74,10 +75,23 @@ export default function DashboardPage() {
         });
         
         if (res.ok) {
-          const data = await res.json();
-          // Bảo vệ mảng nhóm
-          if (Array.isArray(data)) {
-            setGroups(data);
+          const serverData = await res.json();
+          
+          if (Array.isArray(serverData)) {
+            // Lấy Sổ tay lưu Nhóm cũ ở Local
+            const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
+            
+            // Lấy Khung (ID, Tên, Màu) từ Server, lấy Ruột (Thành viên, Tiền) từ Local
+            const mergedGroups = serverData.map((serverGroup: any) => {
+              const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
+              return {
+                ...serverGroup,
+                balance: localGroup ? localGroup.balance : (serverGroup.balance || 0),
+                members: localGroup ? localGroup.members : (serverGroup.members || 1)
+              };
+            });
+
+            setGroups(mergedGroups);
           } else {
             setGroups([]);
           }
@@ -99,11 +113,19 @@ export default function DashboardPage() {
       setUserId(safeNumericId);
       
       setIsLoading(false); 
-      fetchGroupsFromServer(); 
+      fetchGroupsFromServer(safeNumericId); 
     } else {
       router.push("/login"); 
     }
   }, [router]);
+
+  // 🚀 BƯỚC 1.5: GHI NGƯỢC XUỐNG LOCAL (CHỐT SỔ CHO TRANG CHI TIẾT ĐỌC)
+  useEffect(() => {
+    if (!isLoading && userId !== "guest" && groups.length > 0) {
+      localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
+    }
+  }, [groups, isLoading, userId]);
+
 
   useEffect(() => {
     let currentBalance = 0;
@@ -173,7 +195,6 @@ export default function DashboardPage() {
       });
 
       if (res.ok) {
-        // NÂNG CẤP AN TOÀN: Bọc thép dữ liệu trả về
         let responseData = {};
         try { responseData = await res.json(); } catch(e) {}
 
@@ -342,7 +363,6 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-end justify-between mb-3">
-                        {/* ĐÃ FIX: ÉP ID THÀNH CHUỖI ĐỂ TRÁNH LỖI MÀN HÌNH TRẮNG */}
                         <p className={`text-xs font-medium ${t.muted}`}>Id: ...{String(group.id).slice(-4)}</p>
                         <p className={`text-sm font-bold ${group.balance < 0 ? 'text-rose-500' : group.balance > 0 ? 'text-emerald-500' : t.subText}`}>
                           {group.balance > 0 ? '+' : ''}{fmtVND(group.balance || 0)}
