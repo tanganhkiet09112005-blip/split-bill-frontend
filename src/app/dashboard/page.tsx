@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 // ─── UTILS & TÙY CHỈNH API ──────────────────────────────────────────────────
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api"; // Thay đổi link API theo Backend của Sếp
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
 const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n)) + " đ";
 const initials = (n: string) => n ? n.trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?";
@@ -64,7 +64,7 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: LẤY DATA TỪ SERVER SAU KHI ĐĂNG NHẬP
+  // 🚀 BƯỚC 1: LẤY DATA TỪ SERVER (FIX LOADING SIÊU TỐC)
   useEffect(() => {
     const fetchGroupsFromServer = async () => {
       try {
@@ -76,15 +76,14 @@ export default function DashboardPage() {
         
         if (res.ok) {
           const data = await res.json();
-          setGroups(data); // Cập nhật nhóm từ Database
+          setGroups(data);
         } else {
           console.error("Lỗi lấy danh sách nhóm");
         }
       } catch (error) {
         console.error("Lỗi kết nối tới Server:", error);
-      } finally {
-        setIsLoading(false);
       }
+      // ĐÃ XÓA setIsLoading(false) Ở ĐÂY
     };
 
     const session = localStorage.getItem("user");
@@ -92,13 +91,16 @@ export default function DashboardPage() {
       const u = JSON.parse(session);
       setUserName(u.fullName || "Anh Kiệt");
       setUserId(u.id || u.email || "guest");
-      fetchGroupsFromServer(); // Kéo data khi có session
+      
+      // CHO VÀO TRANG LUÔN, KHÔNG CẦN ĐỢI SERVER
+      setIsLoading(false); 
+      fetchGroupsFromServer(); // Tải data ngầm
     } else {
       router.push("/login"); 
     }
   }, [router]);
 
-  // 🚀 BƯỚC 2: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ (Phần này tạm thời vẫn đọc Expense từ Local cho khỏi lỗi UI cũ)
+  // 🚀 BƯỚC 2: QUÉT DATA ĐỂ VẼ BIỂU ĐỒ 
   useEffect(() => {
     let currentBalance = 0;
     let currentSpent = 0;
@@ -137,7 +139,7 @@ export default function DashboardPage() {
     return <Home size={18} className="text-white" />;
   };
 
-  // 🚀 BƯỚC 3: TẠO NHÓM MỚI BẮN LÊN BACKEND
+  // 🚀 BƯỚC 3: TẠO NHÓM MỚI BẮN LÊN BACKEND (ĐÃ NÂNG CẤP BẮT LỖI TẬN GỐC)
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return toast.error("Chưa nhập tên nhóm Sếp ơi!");
@@ -164,14 +166,17 @@ export default function DashboardPage() {
 
       if (res.ok) {
         const newGroup = await res.json();
-        setGroups(prev => [newGroup, ...prev]); // Thêm ngay vào UI
+        setGroups(prev => [newGroup, ...prev]); 
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
         setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
       } else {
-        toast.error("Không thể tạo nhóm!", { id: toastId });
+        // NẾU BACKEND TỪ CHỐI, IN RA MÃ LỖI VÀ NỘI DUNG LỖI
+        const errorText = await res.text();
+        toast.error(`Backend báo lỗi ${res.status}: ${errorText || 'Từ chối tạo'}`, { id: toastId, duration: 6000 });
       }
-    } catch (error) {
-      toast.error("Lỗi kết nối Server!", { id: toastId });
+    } catch (error: any) {
+      // BẮT LỖI SẬP MẠNG HOẶC SAI LINK API
+      toast.error(`Lỗi kết nối: ${error.message}. Kiểm tra lại Link API!`, { id: toastId, duration: 6000 });
     }
   };
 
