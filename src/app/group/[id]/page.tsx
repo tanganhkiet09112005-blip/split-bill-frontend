@@ -30,7 +30,6 @@ const fmtInput = (v: string) => { const n = v.replace(/\D/g, ""); return n ? new
 const parseAmt = (s: string) => parseInt(String(s).replace(/\D/g, "")) || 0;
 const initials = (n: string) => n ? n.trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?";
 
-// 🚀 NÂNG CẤP BỘ NHỚ LOCAL: Chống mất dữ liệu khi F5
 function useLS<T>(key: string, init: T): [T, (val: T | ((prev: T) => T)) => void] {
   const [v, set] = useState<T>(() => {
     if (typeof window === "undefined") return init;
@@ -40,7 +39,6 @@ function useLS<T>(key: string, init: T): [T, (val: T | ((prev: T) => T)) => void
   return [v, set];
 }
 
-// ─── IMPROVED DESIGN TOKENS ──────────────────────────────────────────────────
 const tokens = {
   light: {
     bg: "bg-[#f8f9fc]", card: "bg-white border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]", cardHover: "hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:border-slate-300/80",
@@ -56,13 +54,11 @@ const tokens = {
   }
 };
 
-// ─── MAIN APP ───────────────────────────────────────────────────────────────
 export default function GroupDetailPage() {
   const router = useRouter();
   const params = useParams();
   const groupId = (params?.id || params?.groupId) as string;
 
-  // 🚀 LƯU TRỮ VĨNH CỬU
   const [members, setMembers] = useLS<Member[]>(`payshare_members_${groupId}`, []);
   const [expenses, setExpenses] = useLS<Expense[]>(`payshare_expenses_${groupId}`, []);
   
@@ -104,7 +100,39 @@ export default function GroupDetailPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 🚀 THUẬT TOÁN CHỐT NỢ FRONTEND
+  // 🚀 ĐỒNG BỘ NGƯỢC RA DASHBOARD (REAL-WORLD STATE SYNC)
+  // Tính năng này giúp mỗi khi nhóm thay đổi tiền, Dashboard lập tức được cập nhật!
+  useEffect(() => {
+    if (!isMounted) return;
+    try {
+      const session = localStorage.getItem("user");
+      if (!session) return;
+      const u = JSON.parse(session);
+      let uid = Number(u.id);
+      if (isNaN(uid)) uid = 1;
+
+      const groupKey = `payshare_groups_${uid}`;
+      const dashboardGroups = JSON.parse(localStorage.getItem(groupKey) || "[]");
+
+      const totalSpent = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      
+      let isChanged = false;
+      const updatedGroups = dashboardGroups.map((g: any) => {
+         if (String(g.id) === String(groupId)) {
+            isChanged = true;
+            return { ...g, balance: totalSpent, members: members.length > 0 ? members.length : 1 };
+         }
+         return g;
+      });
+
+      if (isChanged) {
+         localStorage.setItem(groupKey, JSON.stringify(updatedGroups));
+      }
+    } catch (e) {
+      console.error("Lỗi đồng bộ ra Dashboard", e);
+    }
+  }, [expenses, members, groupId, isMounted]);
+
   const serverDebts = useMemo(() => {
     const balances: Record<string, number> = {};
     members.forEach(m => balances[m.userId] = 0);
@@ -155,7 +183,6 @@ export default function GroupDetailPage() {
     return debts;
   }, [expenses, members]);
 
-  // 🚀 THUẬT TOÁN PHÂN TÍCH FRONTEND
   const stats = useMemo(() => {
     return members.map(m => {
       const spent = expenses.filter(e => e.paidBy === m.userId).reduce((sum, e) => sum + e.amount, 0);
@@ -163,7 +190,6 @@ export default function GroupDetailPage() {
     }).filter(s => s.totalSpent > 0).sort((a,b) => b.totalSpent - a.totalSpent);
   }, [expenses, members]);
 
-  // THÊM THÀNH VIÊN
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemberName.trim()) return toast.error("Vui lòng nhập tên!");
@@ -188,15 +214,12 @@ export default function GroupDetailPage() {
     finally { setIsAddingMember(false); }
   };
 
-  // XÓA THÀNH VIÊN
   const handleDeleteMember = async (userId: string, memberName: string) => {
     if (!window.confirm(`Sếp có chắc chắn muốn XÓA "${memberName}" khỏi nhóm không?`)) return;
 
-    // Cập nhật giao diện ngay lập tức
     setMembers(prev => prev.filter(m => m.userId !== userId));
     toast.success(`Đã tiễn ${memberName} khỏi nhóm!`);
 
-    // Đồng bộ với server (NẾU API backend của Sếp hỗ trợ)
     try {
       await fetch(`${API_URL}/members/${userId}`, { method: "DELETE" });
       loadData();
@@ -205,7 +228,6 @@ export default function GroupDetailPage() {
     }
   };
 
-  // LƯU HÓA ĐƠN
   const handleSaveExpense = async (exp: Expense) => {
     const method = exp.id ? "PUT" : "POST";
     const url = exp.id ? `${API_URL}/expenses/${exp.id}` : `${API_URL}/expenses`;
@@ -216,7 +238,7 @@ export default function GroupDetailPage() {
 
     toast.success(exp.id ? "Đã cập nhật!" : "🎉 Đã ghi nhận hóa đơn mới!"); 
     setEditingExpense(null);
-    setTab("settle"); // Tự động giật sang tab Chốt Nợ để xem chia tiền
+    setTab("settle"); 
     
     try {
       await fetch(url, { method: method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(exp) });
@@ -225,12 +247,16 @@ export default function GroupDetailPage() {
     } catch { toast.error("Cảnh báo: Đang lưu offline do mạng yếu!"); return true; }
   };
 
-  // XÓA HÓA ĐƠN
   const delExpense = async (id: string) => {
     if (!window.confirm("Xóa hóa đơn này?")) return;
     setExpenses(prev => prev.filter(e => e.id !== id)); 
     toast.success("Đã xóa!");
     try { await fetch(`${API_URL}/expenses/${id}`, { method: "DELETE" }); loadData(); } catch {}
+  };
+
+  // NẾU MUỐN QUAY VỀ DASHBOARD, SỬ DỤNG window.location.href ĐỂ ÉP NEXT.JS TẢI LẠI TRANG
+  const navigateToDashboard = () => {
+    window.location.href = '/dashboard';
   };
 
   if (!isMounted) return (
@@ -245,7 +271,6 @@ export default function GroupDetailPage() {
   );
 
   const totalGroupSpent = expenses.reduce((s, e) => s + e.amount, 0);
-
   const avatarColors = ["bg-violet-100 text-violet-700", "bg-blue-100 text-blue-700", "bg-emerald-100 text-emerald-700", "bg-amber-100 text-amber-700", "bg-rose-100 text-rose-700", "bg-cyan-100 text-cyan-700"];
 
   return (
@@ -255,7 +280,7 @@ export default function GroupDetailPage() {
       {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
       <aside className={`w-[220px] hidden md:flex flex-col ${t.sidebar}`}>
         <div className="px-6 pt-7 pb-6">
-          <button onClick={() => router.push('/dashboard')} className="block">
+          <button onClick={navigateToDashboard} className="block">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-indigo-200/60"><span className="text-white font-black text-sm">P</span></div>
               <span className={`text-base font-black tracking-tight ${t.text}`}>PayShare</span>
@@ -268,7 +293,7 @@ export default function GroupDetailPage() {
         
         <nav className="flex-1 px-3 space-y-0.5">
           <p className={`text-[10px] font-bold uppercase tracking-widest px-3 mb-2 ${t.muted}`}>Bảng điều khiển</p>
-          <button onClick={() => router.push('/dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${t.navItem}`}><LayoutDashboard size={16} className="opacity-70" /> Dashboard</button>
+          <button onClick={navigateToDashboard} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${t.navItem}`}><LayoutDashboard size={16} className="opacity-70" /> Dashboard</button>
           <button onClick={() => setTab("expenses")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "expenses" ? t.navActive : t.navItem}`}><FolderKanban size={16} className="opacity-70" /> Lịch sử hóa đơn</button>
           <button onClick={() => setTab("settle")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "settle" ? t.navActive : t.navItem}`}><ArrowRight size={16} className="opacity-70" /> Chốt nợ nhóm</button>
           <button onClick={() => setTab("stats")} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${tab === "stats" ? t.navActive : t.navItem}`}><BarChart2 size={16} className="opacity-70" /> Phân tích dữ liệu</button>
@@ -280,7 +305,7 @@ export default function GroupDetailPage() {
             <button onClick={() => setDark(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-bold transition-all ${!dark ? 'bg-white shadow-sm text-indigo-600' : t.muted}`}><Sun size={12} /> Light</button>
             <button onClick={() => setDark(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-bold transition-all ${dark ? 'bg-slate-700 shadow-sm text-indigo-400' : t.muted}`}><Moon size={12} /> Dark</button>
           </div>
-          <button onClick={() => { localStorage.removeItem("user"); router.push("/login"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all text-rose-500 hover:bg-rose-50 ${dark ? 'hover:bg-rose-950/30' : ''}`}><LogOut size={15} className="opacity-70" /> Đăng xuất</button>
+          <button onClick={() => { localStorage.removeItem("user"); window.location.href = "/login"; }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all text-rose-500 hover:bg-rose-50 ${dark ? 'hover:bg-rose-950/30' : ''}`}><LogOut size={15} className="opacity-70" /> Đăng xuất</button>
         </div>
       </aside>
 
@@ -288,7 +313,7 @@ export default function GroupDetailPage() {
       <main className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
         <header className={`h-16 border-b flex items-center justify-between px-6 shrink-0 ${t.header}`}>
           <div className="flex items-center gap-3 flex-1">
-            <button onClick={() => router.push("/dashboard")} className={`md:hidden p-2 rounded-lg transition-colors ${t.navItem}`}><ArrowLeft size={18} /></button>
+            <button onClick={navigateToDashboard} className={`md:hidden p-2 rounded-lg transition-colors ${t.navItem}`}><ArrowLeft size={18} /></button>
             <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border w-full max-w-xs transition-colors ${t.input} ${dark ? 'text-slate-200' : 'text-slate-700'}`}><Search size={15} className={t.muted} /><input type="text" placeholder="Tìm kiếm khoản chi..." className="bg-transparent border-none outline-none w-full text-sm font-medium placeholder:text-slate-400" /></div>
           </div>
           <div className="flex items-center gap-3">
