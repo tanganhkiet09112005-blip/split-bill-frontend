@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
 import {
   LayoutDashboard, Users, BarChart2, Plus, Sun, Moon, Monitor,
-  HelpCircle, LogOut, Search, Bell, Plane, Home, ShoppingBag, Loader2, X, Trash2, PieChartIcon
+  HelpCircle, LogOut, Search, Bell, Plane, Home, ShoppingBag, Loader2, X, Trash2, PieChartIcon, Clock, ReceiptText
 } from "lucide-react";
 
 // ─── UTILS & TÙY CHỈNH API ──────────────────────────────────────────────────
@@ -42,6 +42,7 @@ const tokens = {
 };
 
 interface Group { id: string | number; name: string; type: string; members: number; balance: number; color: string; }
+interface Activity { id: string; description: string; amount: number; groupName: string; createdAt: number; paidBy: string; }
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -52,6 +53,7 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<number | string>("guest");
   const [userName, setUserName] = useState("Anh Kiệt");
   const [groups, setGroups] = useState<Group[]>([]);
+  const [recentActivities, setRecentActivities] = useState<Activity[]>([]); // 🚀 THÊM STATE CHO HOẠT ĐỘNG
   const [isLoading, setIsLoading] = useState(true);
   
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
@@ -64,13 +66,31 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 BƯỚC 1: ĐỒNG BỘ ĐA THIẾT BỊ (CLOUD-FIRST SYNC)
+  // 🚀 TÍNH NĂNG MỚI: TẢI HOẠT ĐỘNG GẦN ĐÂY
+  const loadRecentActivities = (groupsList: Group[]) => {
+    let allExpenses: Activity[] = [];
+    
+    groupsList.forEach(group => {
+      try {
+        const groupExpenses = JSON.parse(localStorage.getItem(`payshare_expenses_${group.id}`) || "[]");
+        const expensesWithGroupInfo = groupExpenses.map((exp: any) => ({
+          ...exp,
+          groupName: group.name,
+          createdAt: exp.createdAt || Date.now()
+        }));
+        allExpenses = [...allExpenses, ...expensesWithGroupInfo];
+      } catch (e) {}
+    });
+
+    // Sắp xếp mới nhất lên đầu và lấy 5 cái
+    allExpenses.sort((a, b) => b.createdAt - a.createdAt);
+    setRecentActivities(allExpenses.slice(0, 5));
+  };
+
   useEffect(() => {
     const fetchGroupsFromServer = async (uid: string | number) => {
       try {
         const token = localStorage.getItem("token");
-        
-        // 1. Máy này dù mới hay cũ đều phải gọi Server trước
         const res = await fetch(`${API_URL}/groups`, {
           method: "GET",
           headers: { "Authorization": `Bearer ${token}` }
@@ -78,19 +98,13 @@ export default function DashboardPage() {
         
         if (res.ok) {
           const serverData = await res.json();
-          
           if (Array.isArray(serverData)) {
-            // Lấy Sổ tay của máy hiện tại (nếu là máy mới thì cái này sẽ trống rỗng [])
             const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
             
             const syncedGroups = serverData.map((serverGroup: any) => {
               const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
-              
-              // TRÁI TIM CỦA ĐỒNG BỘ: Ưu tiên lấy dữ liệu từ Server.
               const serverBalance = Number(serverGroup.balance) || 0;
               const serverMembers = Number(serverGroup.members) || 1;
-              
-              // Nếu Server có tiền hoặc có nhiều người -> Chứng tỏ Server đã lưu -> LẤY CỦA SERVER
               const useServerData = serverBalance !== 0 || serverMembers > 1;
 
               return {
@@ -100,27 +114,23 @@ export default function DashboardPage() {
               };
             });
 
-            // Gộp thêm các nhóm mà Sếp tạo lúc mất mạng (nếu có)
             const serverIds = serverData.map((g: any) => String(g.id));
             const localOnlyGroups = oldLocalGroups.filter((g: any) => !serverIds.includes(String(g.id)));
             const finalGroups = [...syncedGroups, ...localOnlyGroups];
 
-            // 2. Chốt số liệu hiển thị lên màn hình
             setGroups(finalGroups);
-            
-            // 3. Ghi đè vào Sổ tay của máy tính này để lần sau mở nhanh hơn
             localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(finalGroups));
+            loadRecentActivities(finalGroups); // 🚀 Gọi load hoạt động
           }
         } else {
-          // Chỉ lấy Local nếu Server sập
           const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
           setGroups(localGroups);
+          loadRecentActivities(localGroups);
         }
       } catch (error) {
-        console.error("Lỗi kết nối tới Server:", error);
-        // Rớt mạng thì xài tạm Local
         const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
         setGroups(localGroups);
+        loadRecentActivities(localGroups);
       } finally {
         setIsLoading(false);
       }
@@ -130,24 +140,19 @@ export default function DashboardPage() {
     if (session) {
       const u = JSON.parse(session);
       setUserName(u.fullName || "Anh Kiệt");
-      
       let safeNumericId = Number(u.id);
-      if (!u.id || isNaN(safeNumericId)) {
-        safeNumericId = 1; 
-      }
+      if (!u.id || isNaN(safeNumericId)) safeNumericId = 1; 
       setUserId(safeNumericId);
-      
-      // Bắt đầu quy trình đồng bộ Đám mây
       fetchGroupsFromServer(safeNumericId); 
     } else {
       router.push("/login"); 
     }
   }, [router]);
 
-  // 🚀 BƯỚC 1.5: SAO LƯU LIÊN TỤC XUỐNG MÁY (BACKUP)
   useEffect(() => {
     if (!isLoading && userId !== "guest" && groups.length > 0) {
       localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
+      loadRecentActivities(groups); // 🚀 Update hoạt động khi groups thay đổi
     }
   }, [groups, isLoading, userId]);
 
@@ -192,6 +197,17 @@ export default function DashboardPage() {
     return <Home size={18} className="text-white" />;
   };
 
+  // 🚀 TÍNH NĂNG MỚI: TỰ ĐỘNG NHẬN DIỆN LOẠI NHÓM
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setNewGroupName(val);
+    const lowerVal = val.toLowerCase();
+    
+    if (["đà lạt", "du lịch", "phượt", "trip", "chơi", "vũng tàu"].some(k => lowerVal.includes(k))) setNewGroupType("Trip");
+    else if (["mua", "shopping", "siêu thị", "đồ ăn", "nhậu"].some(k => lowerVal.includes(k))) setNewGroupType("Shopping");
+    else if (["nhà", "trọ", "điện", "nước", "home"].some(k => lowerVal.includes(k))) setNewGroupType("Home");
+  };
+
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return toast.error("Chưa nhập tên nhóm Sếp ơi!");
@@ -203,52 +219,33 @@ export default function DashboardPage() {
     const toastId = toast.loading("Đang tạo nhóm trên Server...");
     
     const fallbackGroup = {
-      id: `group_${Date.now()}`,
-      name: newGroupName,
-      type: newGroupType,
-      color: color,
-      balance: 0,
-      members: 1
+      id: `group_${Date.now()}`, name: newGroupName, type: newGroupType,
+      color: color, balance: 0, members: 1
     };
 
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/groups`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` 
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
-          name: newGroupName,
-          type: newGroupType,
-          color: color,
-          userId: userId,
-          user_id: userId,
-          id: userId,
-          owner: userId,
-          createdBy: userId
+          name: newGroupName, type: newGroupType, color: color,
+          userId: userId, user_id: userId, owner: userId, createdBy: userId
         })
       });
 
       if (res.ok) {
         let responseData = {};
         try { responseData = await res.json(); } catch(e) {}
-
-        const safeGroup = {
-          ...fallbackGroup,
-          id: (responseData as any).id || fallbackGroup.id,
-        };
-
+        const safeGroup = { ...fallbackGroup, id: (responseData as any).id || fallbackGroup.id };
         setGroups(prev => [safeGroup, ...prev]); 
         toast.success(`Đã tạo nhóm "${newGroupName}"!`, { id: toastId });
       } else {
-        const errorText = await res.text();
-        toast.error(`Backend báo lỗi ${res.status}, nhưng nhóm vẫn được lưu tạm ở máy!`, { id: toastId, duration: 4000 });
+        toast.error(`Backend lỗi, nhóm lưu tạm ở máy!`, { id: toastId });
         setGroups(prev => [fallbackGroup, ...prev]); 
       }
     } catch (error: any) {
-      toast.error(`Rớt mạng! Đã lưu nhóm tạm vào máy.`, { id: toastId, duration: 4000 });
+      toast.error(`Rớt mạng! Đã lưu nhóm tạm vào máy.`, { id: toastId });
       setGroups(prev => [fallbackGroup, ...prev]); 
     }
     
@@ -257,22 +254,31 @@ export default function DashboardPage() {
 
   const handleDeleteGroup = async (e: React.MouseEvent, id: string | number, name: string) => {
     e.stopPropagation(); 
-    if (window.confirm(`Sếp có chắc chắn muốn xóa nhóm "${name}" không? Toàn bộ dữ liệu sẽ mất!`)) {
+    if (window.confirm(`Sếp có chắc muốn xóa nhóm "${name}" không?`)) {
       const toastId = toast.loading("Đang xóa...");
-      
       setGroups(prev => prev.filter(g => String(g.id) !== String(id)));
       localStorage.removeItem(`payshare_expenses_${id}`); 
       toast.success("Đã xóa nhóm!", { id: toastId });
 
       try {
         const token = localStorage.getItem("token");
-        await fetch(`${API_URL}/groups/${id}`, {
-          method: "DELETE",
-          headers: { "Authorization": `Bearer ${token}` }
-        });
-      } catch (error) {
-      }
+        await fetch(`${API_URL}/groups/${id}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+      } catch (error) {}
     }
+  };
+
+  // 🚀 FIX LỖI "ĐĂNG XUẤT KHÔNG SẠCH" LÀM LẪN LỘN DATA
+  const handleLogout = () => {
+    localStorage.clear(); // Chém sạch sành sanh mọi dấu vết
+    router.push("/login");
+  };
+
+  const timeAgo = (timestamp: number) => {
+    const diff = Math.floor((Date.now() - timestamp) / 60000);
+    if (diff < 1) return "Vừa xong";
+    if (diff < 60) return `${diff} phút trước`;
+    if (diff < 1440) return `${Math.floor(diff/60)} giờ trước`;
+    return `${Math.floor(diff/1440)} ngày trước`;
   };
 
   if (isLoading) return (
@@ -316,9 +322,9 @@ export default function DashboardPage() {
           <div className={`flex p-1 rounded-xl border ${dark ? 'bg-[#0e1117] border-slate-800' : 'bg-white border-slate-200'}`}>
             <button onClick={() => toggleTheme(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${!dark ? 'bg-slate-100 text-indigo-600' : t.muted}`}><Sun size={14} /> Light</button>
             <button onClick={() => toggleTheme(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${dark ? 'bg-slate-800 text-indigo-400' : t.muted}`}><Moon size={14} /> Dark</button>
-            <button className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${t.muted}`}><Monitor size={14} /> System</button>
           </div>
-          <button onClick={() => { localStorage.removeItem("user"); localStorage.removeItem("token"); router.push("/login"); }} className="w-full flex items-center gap-3 px-2 py-2 text-sm font-medium text-rose-500 hover:bg-rose-50 rounded-lg transition-all">
+          {/* ĐỔI GỌI HÀM handleLogout Ở ĐÂY ĐỂ CHÉM RÁC */}
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-2 py-2 text-sm font-medium text-rose-500 hover:bg-rose-50 rounded-lg transition-all">
             <LogOut size={18} className="opacity-70" /> Logout
           </button>
         </div>
@@ -347,7 +353,7 @@ export default function DashboardPage() {
 
         {/* NỘI DUNG THAY ĐỔI THEO TAB */}
         <div className={`flex-1 overflow-y-auto px-8 pb-10`}>
-          <div className="max-w-[1200px]">
+          <div className="max-w-[1200px] xl:max-w-none 2xl:max-w-[1400px]">
             
             {/* ── GÓC DASHBOARD ── */}
             {activeTab === "dashboard" && (
@@ -372,39 +378,79 @@ export default function DashboardPage() {
                    </div>
                 </div>
 
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className={`text-lg font-bold ${t.text}`}>Các Nhóm Của Sếp</h2>
-                  <button onClick={() => setIsAddGroupOpen(true)} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
-                    <Plus size={16}/> Thêm Nhóm
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-                  {groups.length === 0 ? (
-                    <div className={`col-span-full text-center py-16 rounded-2xl border border-dashed ${dark ? 'border-slate-700' : 'border-slate-300'}`}>
-                      <p className={`text-slate-400 italic text-sm font-medium`}>Tài khoản mới tinh. Bấm "Thêm Nhóm" để bắt đầu chia tiền nhé Sếp!</p>
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+                  {/* CỘT TRÁI: DANH SÁCH NHÓM */}
+                  <div className="xl:col-span-8">
+                    <div className="mb-6 flex items-center justify-between">
+                      <h2 className={`text-lg font-bold ${t.text}`}>Các Nhóm Của Sếp</h2>
+                      <button onClick={() => setIsAddGroupOpen(true)} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+                        <Plus size={16}/> Thêm Nhóm
+                      </button>
                     </div>
-                  ) : groups.map((group) => (
-                    <motion.div key={group.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} whileHover={{ y: -4 }} onClick={() => router.push(`/group/${group.id}`)} className={`relative group p-5 rounded-2xl cursor-pointer transition-all duration-200 ${t.card} ${t.cardHover}`}>
-                      <button onClick={(e) => handleDeleteGroup(e, group.id, group.name)} className="absolute top-3 right-3 p-2 rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"><Trash2 size={16} /></button>
-                      <div className="flex items-start gap-4 mb-8">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${group.color}`}>{getIcon(group.type)}</div>
-                        <div className="pr-6">
-                          <h3 className={`font-bold text-base line-clamp-1 ${t.text}`}>{group.name}</h3>
-                          <span className={`inline-block px-2 py-0.5 mt-1 rounded-md text-[10px] font-semibold ${dark ? 'bg-slate-800 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>{group.type}</span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
+                      {groups.length === 0 ? (
+                        <div className={`col-span-full text-center py-16 rounded-2xl border border-dashed ${dark ? 'border-slate-700' : 'border-slate-300'}`}>
+                          <p className={`text-slate-400 italic text-sm font-medium`}>Bấm "Thêm Nhóm" để bắt đầu chia tiền nhé Sếp!</p>
                         </div>
-                      </div>
-                      <div className="flex items-end justify-between mb-3">
-                        <p className={`text-xs font-medium ${t.muted}`}>Id: ...{String(group.id).slice(-4)}</p>
-                        <p className={`text-sm font-bold ${group.balance < 0 ? 'text-rose-500' : group.balance > 0 ? 'text-emerald-500' : t.subText}`}>
-                          {group.balance > 0 ? '+' : ''}{fmtVND(group.balance)}
-                        </p>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div className={`h-full rounded-full transition-all duration-500 ${group.balance < 0 ? 'bg-rose-500' : group.balance > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`} style={{ width: group.balance === 0 ? '0%' : '100%' }} />
-                      </div>
-                    </motion.div>
-                  ))}
+                      ) : groups.map((group) => (
+                        <motion.div key={group.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} whileHover={{ y: -4 }} onClick={() => router.push(`/group/${group.id}`)} className={`relative group p-5 rounded-2xl cursor-pointer transition-all duration-200 ${t.card} ${t.cardHover}`}>
+                          <button onClick={(e) => handleDeleteGroup(e, group.id, group.name)} className="absolute top-3 right-3 p-2 rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"><Trash2 size={16} /></button>
+                          <div className="flex items-start gap-4 mb-8">
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${group.color}`}>{getIcon(group.type)}</div>
+                            <div className="pr-6">
+                              <h3 className={`font-bold text-base line-clamp-1 ${t.text}`}>{group.name}</h3>
+                              <span className={`inline-block px-2 py-0.5 mt-1 rounded-md text-[10px] font-semibold ${dark ? 'bg-slate-800 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>{group.type}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-end justify-between mb-3">
+                            <p className={`text-xs font-medium ${t.muted}`}>Id: ...{String(group.id).slice(-4)}</p>
+                            <p className={`text-sm font-bold ${group.balance < 0 ? 'text-rose-500' : group.balance > 0 ? 'text-emerald-500' : t.subText}`}>
+                              {group.balance > 0 ? '+' : ''}{fmtVND(group.balance)}
+                            </p>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div className={`h-full rounded-full transition-all duration-500 ${group.balance < 0 ? 'bg-rose-500' : group.balance > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`} style={{ width: group.balance === 0 ? '0%' : '100%' }} />
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 🚀 CỘT PHẢI: RECENT ACTIVITY */}
+                  <div className="xl:col-span-4">
+                    <div className="mb-6 flex items-center gap-2">
+                      <h2 className={`text-lg font-bold ${t.text}`}>Hoạt động gần đây</h2>
+                    </div>
+                    <div className={`p-6 rounded-2xl ${t.card}`}>
+                      {recentActivities.length === 0 ? (
+                        <div className="text-center py-10">
+                          <Clock size={24} className={`mx-auto mb-2 opacity-20 ${t.text}`} />
+                          <p className={`text-xs font-medium ${t.muted}`}>Chưa có khoản chi nào.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-5">
+                          {recentActivities.map((act) => (
+                            <div key={act.id} className="flex gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                <ReceiptText size={16} className={t.subText} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-bold truncate ${t.text}`}>{act.description}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${dark ? 'bg-indigo-950/50 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>{act.groupName}</span>
+                                  <span className={`text-[11px] font-medium ${t.muted}`}>{timeAgo(act.createdAt)}</span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-black text-rose-500">-{fmtVND(act.amount)}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -470,13 +516,14 @@ export default function DashboardPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={() => setIsAddGroupOpen(false)} />
             <motion.div initial={{ scale: 0.95, opacity: 0, y: 8 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 8 }} className={`relative w-full max-w-sm rounded-2xl p-6 shadow-2xl ${dark ? 'bg-[#161b27] border border-slate-700/50' : 'bg-white border border-slate-200/80'}`}>
               <div className="flex items-start justify-between mb-6">
-                <div><h3 className={`text-lg font-black ${t.text}`}>Tạo nhóm mới</h3><p className={`text-xs font-medium mt-0.5 ${t.muted}`}>Đi chơi, Mua sắm hay Tiền nhà?</p></div>
+                <div><h3 className={`text-lg font-black ${t.text}`}>Tạo nhóm mới</h3><p className={`text-xs font-medium mt-0.5 ${t.muted}`}>Nhập tên và hệ thống sẽ tự chọn loại nhóm.</p></div>
                 <button onClick={() => setIsAddGroupOpen(false)} className={`p-2 rounded-lg transition-colors ${t.navItem}`}><X size={18}/></button>
               </div>
               <form onSubmit={handleAddGroup} className="space-y-4">
                 <div>
                   <label className={`block text-[11px] font-bold uppercase mb-1.5 ${t.subText}`}>Tên nhóm</label>
-                  <input type="text" placeholder="VD: Đi Đà Lạt, Tiền trọ..." value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} className={`w-full h-12 px-4 border-2 rounded-xl outline-none font-semibold text-sm transition-all ${dark ? 'bg-slate-800/60 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-indigo-400 placeholder:text-slate-400'}`} required autoFocus />
+                  {/* 🚀 ĐỔI SANG DÙNG HÀM handleNameChange ĐỂ AUTO-DETECT */}
+                  <input type="text" placeholder="VD: Đi Đà Lạt, Tiền trọ..." value={newGroupName} onChange={handleNameChange} className={`w-full h-12 px-4 border-2 rounded-xl outline-none font-semibold text-sm transition-all ${dark ? 'bg-slate-800/60 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-indigo-400 placeholder:text-slate-400'}`} required autoFocus />
                 </div>
                 <div>
                   <label className={`block text-[11px] font-bold uppercase mb-1.5 ${t.subText}`}>Loại nhóm</label>
