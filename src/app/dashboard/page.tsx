@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
 import {
   LayoutDashboard, Users, BarChart2, Plus, Sun, Moon, Monitor,
-  HelpCircle, LogOut, Search, Bell, Plane, Home, ShoppingBag, Loader2, X, Trash2, PieChartIcon, Clock, ReceiptText
+  HelpCircle, LogOut, Search, Bell, Plane, Home, ShoppingBag, Loader2, X, Trash2, PieChartIcon, Clock, ReceiptText, Tag
 } from "lucide-react";
 
 // ─── UTILS & TÙY CHỈNH API ──────────────────────────────────────────────────
@@ -53,12 +53,14 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<number | string>("guest");
   const [userName, setUserName] = useState("Anh Kiệt");
   const [groups, setGroups] = useState<Group[]>([]);
-  const [recentActivities, setRecentActivities] = useState<Activity[]>([]); // 🚀 THÊM STATE CHO HOẠT ĐỘNG
+  const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
+  // States cho modal thêm nhóm
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupType, setNewGroupType] = useState("Trip");
+  const [isCustomType, setIsCustomType] = useState(false); // 🚀 Thêm state để mở ô nhập tay
 
   const [totalBalance, setTotalBalance] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
@@ -66,23 +68,17 @@ export default function DashboardPage() {
 
   const t = dark ? tokens.dark : tokens.light;
 
-  // 🚀 TÍNH NĂNG MỚI: TẢI HOẠT ĐỘNG GẦN ĐÂY
   const loadRecentActivities = (groupsList: Group[]) => {
     let allExpenses: Activity[] = [];
-    
     groupsList.forEach(group => {
       try {
         const groupExpenses = JSON.parse(localStorage.getItem(`payshare_expenses_${group.id}`) || "[]");
         const expensesWithGroupInfo = groupExpenses.map((exp: any) => ({
-          ...exp,
-          groupName: group.name,
-          createdAt: exp.createdAt || Date.now()
+          ...exp, groupName: group.name, createdAt: exp.createdAt || Date.now()
         }));
         allExpenses = [...allExpenses, ...expensesWithGroupInfo];
       } catch (e) {}
     });
-
-    // Sắp xếp mới nhất lên đầu và lấy 5 cái
     allExpenses.sort((a, b) => b.createdAt - a.createdAt);
     setRecentActivities(allExpenses.slice(0, 5));
   };
@@ -91,49 +87,37 @@ export default function DashboardPage() {
     const fetchGroupsFromServer = async (uid: string | number) => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`${API_URL}/groups`, {
-          method: "GET",
-          headers: { "Authorization": `Bearer ${token}` }
-        });
-        
+        const res = await fetch(`${API_URL}/groups`, { method: "GET", headers: { "Authorization": `Bearer ${token}` } });
         if (res.ok) {
           const serverData = await res.json();
           if (Array.isArray(serverData)) {
             const oldLocalGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
-            
             const syncedGroups = serverData.map((serverGroup: any) => {
               const localGroup = oldLocalGroups.find((g: any) => String(g.id) === String(serverGroup.id));
               const serverBalance = Number(serverGroup.balance) || 0;
               const serverMembers = Number(serverGroup.members) || 1;
               const useServerData = serverBalance !== 0 || serverMembers > 1;
-
               return {
                 ...serverGroup,
                 balance: useServerData ? serverBalance : (localGroup ? localGroup.balance : 0),
                 members: useServerData ? serverMembers : (localGroup ? localGroup.members : 1)
               };
             });
-
             const serverIds = serverData.map((g: any) => String(g.id));
             const localOnlyGroups = oldLocalGroups.filter((g: any) => !serverIds.includes(String(g.id)));
             const finalGroups = [...syncedGroups, ...localOnlyGroups];
-
             setGroups(finalGroups);
             localStorage.setItem(`payshare_groups_${uid}`, JSON.stringify(finalGroups));
-            loadRecentActivities(finalGroups); // 🚀 Gọi load hoạt động
+            loadRecentActivities(finalGroups); 
           }
         } else {
           const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
-          setGroups(localGroups);
-          loadRecentActivities(localGroups);
+          setGroups(localGroups); loadRecentActivities(localGroups);
         }
       } catch (error) {
         const localGroups = JSON.parse(localStorage.getItem(`payshare_groups_${uid}`) || "[]");
-        setGroups(localGroups);
-        loadRecentActivities(localGroups);
-      } finally {
-        setIsLoading(false);
-      }
+        setGroups(localGroups); loadRecentActivities(localGroups);
+      } finally { setIsLoading(false); }
     };
 
     const session = localStorage.getItem("user");
@@ -144,22 +128,19 @@ export default function DashboardPage() {
       if (!u.id || isNaN(safeNumericId)) safeNumericId = 1; 
       setUserId(safeNumericId);
       fetchGroupsFromServer(safeNumericId); 
-    } else {
-      router.push("/login"); 
-    }
+    } else { router.push("/login"); }
   }, [router]);
 
   useEffect(() => {
     if (!isLoading && userId !== "guest" && groups.length > 0) {
       localStorage.setItem(`payshare_groups_${userId}`, JSON.stringify(groups));
-      loadRecentActivities(groups); // 🚀 Update hoạt động khi groups thay đổi
+      loadRecentActivities(groups); 
     }
   }, [groups, isLoading, userId]);
 
   useEffect(() => {
-    let currentBalance = 0;
-    let currentSpent = 0;
-    const typeStats: Record<string, number> = { Trip: 0, Shopping: 0, Home: 0 };
+    let currentBalance = 0; let currentSpent = 0;
+    const typeStats: Record<string, number> = {};
 
     groups.forEach(g => {
       currentBalance += (g.balance || 0);
@@ -170,39 +151,48 @@ export default function DashboardPage() {
           if (Array.isArray(groupExpenses)) {
             const spentInGroup = groupExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
             currentSpent += spentInGroup;
-            if(typeStats[g.type] !== undefined) typeStats[g.type] += spentInGroup;
+            if(!typeStats[g.type]) typeStats[g.type] = 0;
+            typeStats[g.type] += spentInGroup;
           }
         } else if (g.balance > 0) {
            currentSpent += Math.abs(g.balance);
-           if(typeStats[g.type] !== undefined) typeStats[g.type] += Math.abs(g.balance);
+           if(!typeStats[g.type]) typeStats[g.type] = 0;
+           typeStats[g.type] += Math.abs(g.balance);
         }
       } catch (e) {}
     });
 
-    setTotalBalance(currentBalance);
-    setTotalSpent(currentSpent);
+    setTotalBalance(currentBalance); setTotalSpent(currentSpent);
     
-    setAnalyticsData([
-       { type: "Du lịch (Trip)", spent: typeStats["Trip"], color: "bg-indigo-500" },
-       { type: "Mua sắm (Shopping)", spent: typeStats["Shopping"], color: "bg-amber-500" },
-       { type: "Gia đình (Home)", spent: typeStats["Home"], color: "bg-emerald-500" },
-    ].filter(item => item.spent > 0).sort((a,b) => b.spent - a.spent));
+    const mappedStats = Object.keys(typeStats).map(key => {
+      let color = "bg-blue-500"; // Màu mặc định cho Custom type
+      if(key === "Trip") color = "bg-indigo-500";
+      if(key === "Shopping") color = "bg-amber-500";
+      if(key === "Home") color = "bg-emerald-500";
+      return { type: key, spent: typeStats[key], color };
+    });
+    
+    setAnalyticsData(mappedStats.filter(item => item.spent > 0).sort((a,b) => b.spent - a.spent));
   }, [groups]);
 
   const toggleTheme = (val: boolean) => setDark(val);
 
+  // 🚀 ICON CHO LOẠI NHÓM TÙY CHỈNH
   const getIcon = (type: string) => {
     if (type === "Trip") return <Plane size={18} className="text-white" />;
     if (type === "Shopping") return <ShoppingBag size={18} className="text-white" />;
-    return <Home size={18} className="text-white" />;
+    if (type === "Home") return <Home size={18} className="text-white" />;
+    return <Tag size={18} className="text-white" />; // Icon cái Thẻ cho Custom
   };
 
-  // 🚀 TÍNH NĂNG MỚI: TỰ ĐỘNG NHẬN DIỆN LOẠI NHÓM
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setNewGroupName(val);
     const lowerVal = val.toLowerCase();
     
+    // Nếu họ đang gõ tay vào loại tùy chỉnh thì đừng auto-detect đè lên
+    if (isCustomType) return; 
+
     if (["đà lạt", "du lịch", "phượt", "trip", "chơi", "vũng tàu"].some(k => lowerVal.includes(k))) setNewGroupType("Trip");
     else if (["mua", "shopping", "siêu thị", "đồ ăn", "nhậu"].some(k => lowerVal.includes(k))) setNewGroupType("Shopping");
     else if (["nhà", "trọ", "điện", "nước", "home"].some(k => lowerVal.includes(k))) setNewGroupType("Home");
@@ -211,15 +201,18 @@ export default function DashboardPage() {
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return toast.error("Chưa nhập tên nhóm Sếp ơi!");
+    
+    const finalType = newGroupType.trim() === "" ? "Chưa phân loại" : newGroupType;
 
-    let color = "bg-indigo-500";
-    if (newGroupType === "Shopping") color = "bg-amber-500";
-    if (newGroupType === "Home") color = "bg-emerald-500";
+    let color = "bg-blue-500"; // Màu mặc định cho loại tùy chỉnh
+    if (finalType === "Trip") color = "bg-indigo-500";
+    if (finalType === "Shopping") color = "bg-amber-500";
+    if (finalType === "Home") color = "bg-emerald-500";
 
     const toastId = toast.loading("Đang tạo nhóm trên Server...");
     
     const fallbackGroup = {
-      id: `group_${Date.now()}`, name: newGroupName, type: newGroupType,
+      id: `group_${Date.now()}`, name: newGroupName, type: finalType,
       color: color, balance: 0, members: 1
     };
 
@@ -229,7 +222,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
-          name: newGroupName, type: newGroupType, color: color,
+          name: newGroupName, type: finalType, color: color,
           userId: userId, user_id: userId, owner: userId, createdBy: userId
         })
       });
@@ -249,7 +242,11 @@ export default function DashboardPage() {
       setGroups(prev => [fallbackGroup, ...prev]); 
     }
     
-    setNewGroupName(""); setNewGroupType("Trip"); setIsAddGroupOpen(false);
+    // Reset form sau khi tạo
+    setNewGroupName(""); 
+    setNewGroupType("Trip"); 
+    setIsCustomType(false);
+    setIsAddGroupOpen(false);
   };
 
   const handleDeleteGroup = async (e: React.MouseEvent, id: string | number, name: string) => {
@@ -267,9 +264,8 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 FIX LỖI "ĐĂNG XUẤT KHÔNG SẠCH" LÀM LẪN LỘN DATA
   const handleLogout = () => {
-    localStorage.clear(); // Chém sạch sành sanh mọi dấu vết
+    localStorage.clear(); 
     router.push("/login");
   };
 
@@ -323,7 +319,6 @@ export default function DashboardPage() {
             <button onClick={() => toggleTheme(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${!dark ? 'bg-slate-100 text-indigo-600' : t.muted}`}><Sun size={14} /> Light</button>
             <button onClick={() => toggleTheme(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${dark ? 'bg-slate-800 text-indigo-400' : t.muted}`}><Moon size={14} /> Dark</button>
           </div>
-          {/* ĐỔI GỌI HÀM handleLogout Ở ĐÂY ĐỂ CHÉM RÁC */}
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-2 py-2 text-sm font-medium text-rose-500 hover:bg-rose-50 rounded-lg transition-all">
             <LogOut size={18} className="opacity-70" /> Logout
           </button>
@@ -417,7 +412,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* 🚀 CỘT PHẢI: RECENT ACTIVITY */}
+                  {/* CỘT PHẢI: RECENT ACTIVITY */}
                   <div className="xl:col-span-4">
                     <div className="mb-6 flex items-center gap-2">
                       <h2 className={`text-lg font-bold ${t.text}`}>Hoạt động gần đây</h2>
@@ -515,25 +510,39 @@ export default function DashboardPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={() => setIsAddGroupOpen(false)} />
             <motion.div initial={{ scale: 0.95, opacity: 0, y: 8 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 8 }} className={`relative w-full max-w-sm rounded-2xl p-6 shadow-2xl ${dark ? 'bg-[#161b27] border border-slate-700/50' : 'bg-white border border-slate-200/80'}`}>
+              
               <div className="flex items-start justify-between mb-6">
                 <div><h3 className={`text-lg font-black ${t.text}`}>Tạo nhóm mới</h3><p className={`text-xs font-medium mt-0.5 ${t.muted}`}>Nhập tên và hệ thống sẽ tự chọn loại nhóm.</p></div>
-                <button onClick={() => setIsAddGroupOpen(false)} className={`p-2 rounded-lg transition-colors ${t.navItem}`}><X size={18}/></button>
+                <button onClick={() => { setIsAddGroupOpen(false); setIsCustomType(false); setNewGroupName(""); }} className={`p-2 rounded-lg transition-colors ${t.navItem}`}><X size={18}/></button>
               </div>
+
               <form onSubmit={handleAddGroup} className="space-y-4">
                 <div>
                   <label className={`block text-[11px] font-bold uppercase mb-1.5 ${t.subText}`}>Tên nhóm</label>
-                  {/* 🚀 ĐỔI SANG DÙNG HÀM handleNameChange ĐỂ AUTO-DETECT */}
                   <input type="text" placeholder="VD: Đi Đà Lạt, Tiền trọ..." value={newGroupName} onChange={handleNameChange} className={`w-full h-12 px-4 border-2 rounded-xl outline-none font-semibold text-sm transition-all ${dark ? 'bg-slate-800/60 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-indigo-400 placeholder:text-slate-400'}`} required autoFocus />
                 </div>
+                
                 <div>
                   <label className={`block text-[11px] font-bold uppercase mb-1.5 ${t.subText}`}>Loại nhóm</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  {/* 🚀 LƯỚI 4 NÚT: TRIP, SHOPPING, HOME, KHÁC */}
+                  <div className="grid grid-cols-2 gap-2">
                     {["Trip", "Shopping", "Home"].map(type => (
-                      <button key={type} type="button" onClick={() => setNewGroupType(type)} className={`py-2 rounded-xl text-xs font-bold transition-all border ${newGroupType === type ? 'bg-indigo-600 border-indigo-600 text-white' : `${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-400' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-300'}`}`}>{type}</button>
+                      <button key={type} type="button" onClick={() => { setNewGroupType(type); setIsCustomType(false); }} className={`py-2 rounded-xl text-xs font-bold transition-all border ${newGroupType === type && !isCustomType ? 'bg-indigo-600 border-indigo-600 text-white' : `${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-400' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-300'}`}`}>{type}</button>
                     ))}
+                    <button type="button" onClick={() => { setIsCustomType(true); setNewGroupType(""); }} className={`py-2 rounded-xl text-xs font-bold transition-all border ${isCustomType ? 'bg-indigo-600 border-indigo-600 text-white' : `${dark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-400' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-300'}`}`}>Khác ✍️</button>
                   </div>
+
+                  {/* 🚀 Ô NHẬP HIỆN RA KHI BẤM 'KHÁC' */}
+                  <AnimatePresence>
+                    {isCustomType && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden mt-2">
+                        <input type="text" placeholder="Gõ loại nhóm (VD: Quỹ lớp, Sinh nhật...)" value={newGroupType} onChange={(e) => setNewGroupType(e.target.value)} className={`w-full h-11 px-4 border-2 rounded-xl outline-none font-semibold text-sm transition-all ${dark ? 'bg-slate-800/60 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-indigo-400 placeholder:text-slate-400'}`} required={isCustomType} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                <button type="submit" className="w-full mt-2 h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200/50 dark:shadow-none flex items-center justify-center gap-2 transition-all"><Plus size={16}/> Khởi tạo Nhóm</button>
+
+                <button type="submit" className="w-full mt-4 h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200/50 dark:shadow-none flex items-center justify-center gap-2 transition-all"><Plus size={16}/> Khởi tạo Nhóm</button>
               </form>
             </motion.div>
           </div>
